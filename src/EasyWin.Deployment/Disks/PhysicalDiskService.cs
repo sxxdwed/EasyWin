@@ -33,6 +33,7 @@ public sealed class PhysicalDiskService(IProcessRunner processRunner) : IPhysica
               OffsetBytes = [long]$p.Offset
               SizeBytes = [long]$p.Size
               ShrinkAvailableBytes = if ($supported -and $supported.SizeMin -le $p.Size) { [long]($p.Size - $supported.SizeMin) } else { [long]0 }
+              FreeBytes = if ($v) { [long]$v.SizeRemaining } else { [long]0 }
               DriveLetter = [string]$p.DriveLetter
               VolumePath = [string](@($p.AccessPaths | Where-Object { $_ -like '\\?\Volume{*' }) | Select-Object -First 1)
               Label = [string]$v.FileSystemLabel
@@ -133,6 +134,7 @@ public sealed class PhysicalDiskService(IProcessRunner processRunner) : IPhysica
             OffsetBytes = element.GetProperty("OffsetBytes").GetInt64(),
             SizeBytes = element.GetProperty("SizeBytes").GetInt64(),
             ShrinkAvailableBytes = element.TryGetProperty("ShrinkAvailableBytes", out var shrink) && shrink.TryGetInt64(out var shrinkBytes) ? shrinkBytes : 0,
+            FreeBytes = element.TryGetProperty("FreeBytes", out var free) && free.TryGetInt64(out var freeBytes) ? freeBytes : 0,
             DriveLetter = NullIfEmpty(GetString(element, "DriveLetter")),
             VolumePath = NullIfEmpty(GetString(element, "VolumePath")),
             Label = NullIfEmpty(GetString(element, "Label")),

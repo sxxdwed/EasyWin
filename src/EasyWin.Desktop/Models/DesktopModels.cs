@@ -245,6 +245,7 @@ public sealed record UiPreparationRequest(
     IReadOnlyList<DiskChoice> AdditionalDisksToErase,
     IReadOnlyList<string> ApplicationIds,
     string DriverMode,
-    bool DryRun);
+    bool DryRun,
+    DiskChoice? StagingDisk = null);
 
 public sealed record UiWorkflowResult(bool Success, string Message, string? ManifestPath = null);

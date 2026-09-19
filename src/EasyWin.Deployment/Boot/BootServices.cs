@@ -34,10 +34,19 @@ public sealed partial class BcdService(IProcessRunner runner) : IBcdService
         string backup = DeploymentGuard.AbsolutePath(request.BcdStorePath, "BCD backup");
         Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
         Guid loader = mode.IsDryRun() ? Guid.Parse("22222222-2222-4222-8222-222222222222") : Guid.Empty;
+        bool exported = false;
 
         try
         {
             await RunAsync(BcdCommandFactory.Export(backup), "Export BCD", mode, cancellationToken).ConfigureAwait(false);
+            exported = true;
+            if (!mode.IsDryRun())
+            {
+                ProcessResult options = await runner.RunAsync(BcdCommandFactory.Enumerate("{ramdiskoptions}"), cancellationToken).ConfigureAwait(false);
+                if (!options.Succeeded)
+                    await RunAsync(new CommandSpec("bcdedit.exe", ["/create", "{ramdiskoptions}", "/d", "EasyWin RAM disk options"], requiresElevation: true), "Create RAM disk options", mode, cancellationToken).ConfigureAwait(false);
+                await RunAsync(BcdCommandFactory.Enumerate("{ramdiskoptions}"), "Validate RAM disk options", mode, cancellationToken).ConfigureAwait(false);
+            }
             if (!mode.IsDryRun())
             {
                 ProcessResult created = await runner.RunAsync(BcdCommandFactory.CreateLoader(request.Description), cancellationToken).ConfigureAwait(false);
@@ -71,11 +80,26 @@ public sealed partial class BcdService(IProcessRunner runner) : IBcdService
                 await RunAsync(command, "Configure one-time WinPE boot", mode, cancellationToken).ConfigureAwait(false);
             }
 
+            if (!mode.IsDryRun())
+            {
+                var loaderCheck = await runner.RunAsync(BcdCommandFactory.Enumerate(id), cancellationToken).ConfigureAwait(false);
+                var sequenceCheck = await runner.RunAsync(BcdCommandFactory.Enumerate("{bootmgr}"), cancellationToken).ConfigureAwait(false);
+                var optionsCheck = await runner.RunAsync(BcdCommandFactory.Enumerate("{ramdiskoptions}"), cancellationToken).ConfigureAwait(false);
+                CommandFailureException.ThrowIfFailed("Validate loader", loaderCheck);
+                CommandFailureException.ThrowIfFailed("Validate boot sequence", sequenceCheck);
+                CommandFailureException.ThrowIfFailed("Validate ramdisk options", optionsCheck);
+                if (!loaderCheck.StandardOutput.Contains(id, StringComparison.OrdinalIgnoreCase) ||
+                    !loaderCheck.StandardOutput.Contains(device, StringComparison.OrdinalIgnoreCase) ||
+                    !sequenceCheck.StandardOutput.Contains(id, StringComparison.OrdinalIgnoreCase) ||
+                    !optionsCheck.StandardOutput.Contains(sdiPath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("BCD read-back did not confirm the requested WinPE boot configuration.");
+            }
+
             return new TemporaryBootEntry(loader, Guid.Empty, backup);
         }
         catch
         {
-            if (!mode.IsDryRun() && File.Exists(backup))
+            if (exported && !mode.IsDryRun() && File.Exists(backup))
             {
                 ProcessResult rollback = await runner.RunAsync(BcdCommandFactory.Import(backup), CancellationToken.None).ConfigureAwait(false);
                 CommandFailureException.ThrowIfFailed("Restore BCD backup", rollback);

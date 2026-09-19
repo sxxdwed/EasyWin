@@ -2,7 +2,7 @@ namespace EasyWin.Core.Models;
 
 public static class DeploymentManifestSchema
 {
-    public const string CurrentVersion = "1.2";
+    public const string CurrentVersion = "1.3";
     public const string HashAlgorithm = "SHA-256";
 }
 
@@ -93,6 +93,10 @@ public sealed record DeploymentManifest
     public ExecutionMode ExecutionMode { get; init; }
 
     public DiskIdentity TargetDisk { get; init; } = new();
+
+    public bool DataLossAcknowledged { get; init; }
+
+    public bool FinalConfirmationAccepted { get; init; }
 
     public IReadOnlyList<DiskIdentity> AdditionalDisksToErase { get; init; } = Array.Empty<DiskIdentity>();
 

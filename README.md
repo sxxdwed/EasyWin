@@ -1,4 +1,14 @@
-# EasyWin
+# EasyWin 1.3.0-beta.1
+
+> BETA — experimental destructive deployment software. Automated tests and simulated deployment pass, but a complete real reboot/install/first-boot cycle has not been verified. Test first in a UEFI virtual machine with disposable disks. Do not use on your main PC without verified external backups and recovery media.
+
+Download the [beta release](https://github.com/sxxdwed/EasyWin/releases/tag/v1.3.0-beta.1). Older releases are superseded for testing.
+
+## Two-disk beta
+
+Select the Windows target (erased), deployment storage (preserved), and optionally an additional erase disk independently. Separate staging uses an existing unencrypted NTFS volume and never shrinks the Windows target. WinPE validates both stable identities and staged hashes before fully repartitioning only the target. After first boot, cleanup removes only the plan-specific deployment folder on the storage disk. Selecting the target itself as storage uses the existing protected-partition mode.
+
+With only two disks, you cannot both preserve the second disk as staging and erase it in the same run. Use same-disk protected staging if the optional second disk must also be erased.
 
 EasyWin is a fail-closed Windows 11 deployment orchestrator for a local, USB-free reinstall. It stages an official Windows image and a self-contained WinPE worker on a temporary NTFS partition, asks Windows Boot Manager to start that WinPE image once, reapplies Windows, and finishes drivers, applications, profile settings, boot cleanup, and partition cleanup after the new system starts.
 
@@ -10,9 +20,9 @@ After first boot, EasyWin asks the built-in Windows licensing service to activat
 
 Real deployment is deliberately fail-closed. Before staging and again in WinPE, EasyWin verifies the target by device identifier, serial number, model, byte size, and bus type. The deployment partition is recorded by GPT partition GUID, offset, size, and label and is excluded from every destructive plan. The manifest and every staged payload are SHA-256 verified before disk changes.
 
-The Windows target disk is selected independently from the currently running system disk. EasyWin measures the supported shrink range on that exact disk and creates `EASYWIN_DEPLOY` only when at least the required protected capacity is available. The UI can optionally select one distinct second internal disk for erasure, giving a hard maximum of two affected disks per run. Both disks are recorded by stable identity in the signed manifest and revalidated in WinPE before the first destructive command. USB and other removable targets are rejected.
+The Windows target disk is selected independently from the currently running system disk. Separate staging avoids target shrink; same-disk staging requires sufficient supported NTFS shrink capacity for `EASYWIN_DEPLOY`. The optional additional erase disk must differ from both target and separate staging. Identities are recorded in a hash-sealed manifest (not a digital signature) and resolved again before reboot and in WinPE. USB and other removable targets are rejected.
 
-WinPE deletes only explicitly enumerated partitions and never issues DiskPart `clean`. It first preserves staging, prepares EFI/MSR/Windows on the selected Windows disk, applies and verifies the selected WIM/ESD index, writes the new EFI boot files and copies PostInstall. Only after the new Windows image exists does it erase the optional second disk, format it as one NTFS `Data` volume, register the new UEFI boot entry, and reboot. Recovery is created after the first successful boot: PostInstall removes the staging partition, expands Windows, reserves the final recovery area, installs WinRE, and enables it.
+Same-disk WinPE preparation deletes explicitly enumerated partitions and forbids DiskPart `clean`. Separate-disk preparation allows `clean` only through the dedicated target path after identity and staging guards, and creates EFI/MSR/Windows/Recovery on the target. DISM applies the selected image index, BCDBoot prepares boot files, and PostInstall is copied. The optional erase disk is processed after image application. Same-disk cleanup removes protected staging, expands Windows and recreates Recovery; separate-disk cleanup does not change staging disk geometry.
 
 If elevation, UEFI, AC power, free space, BitLocker state, ADK files, image metadata, hashes, disk identity, or boot validation fails, the real pipeline stops before destructive work.
 

@@ -304,12 +304,55 @@ public sealed class CleanupService(
     public async Task CleanupAsync(DeploymentManifest manifest, string workDirectory, ExecutionMode mode, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(manifest);
-        PhysicalDiskSnapshot snapshot = await disks.GetDiskAsync(manifest.TargetDisk.DiskNumber, cancellationToken).ConfigureAwait(false);
+        PhysicalDiskSnapshot snapshot = await Staging.StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
         if (!diskValidator.Validate(manifest.TargetDisk, snapshot.Identity).IsValid)
         {
             throw new DeploymentSafetyException("cleanup.disk.changed", "Target disk identity changed; cleanup was cancelled.");
         }
 
+        if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
+        {
+            if (!mode.IsDryRun() && (!snapshot.Identity.IsBootDisk || !manifest.State.CompletedStages.Contains(DeploymentStage.AwaitingFirstBoot)))
+                throw new DeploymentSafetyException("cleanup.firstboot", "Cleanup requires a successful boot of the target Windows installation.");
+            var storage = await Staging.StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+            var volume = Staging.StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
+            if (Staging.StagingSelection.SameDisk(snapshot.Identity, storage.Identity) ||
+                manifest.StagingPartition.FolderRelativePath != $"EasyWin-Deployment/{manifest.PlanId:N}")
+                throw new DeploymentSafetyException("cleanup.path", "Separate staging folder identity is invalid.");
+            string root = mode.IsDryRun() ? Path.GetFullPath(manifest.StagingPartition.RootPath) : Staging.StagingSelection.Root(manifest.StagingPartition, volume);
+            string work = Path.GetFullPath(workDirectory).TrimEnd(Path.DirectorySeparatorChar);
+            if (work.Equals(root.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase) ||
+                work.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                throw new DeploymentSafetyException("cleanup.work.overlap", "Cleanup logs must be stored outside deployment storage.");
+            // Validate every entry before deleting; never follow junctions or touch the volume root.
+            var entries = new List<string>();
+            void Inspect(string directory)
+            {
+                foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+                {
+                    _ = PathValidator.ResolveUnderRoot(root, Path.GetRelativePath(root, entry), true);
+                    entries.Add(entry);
+                    if (Directory.Exists(entry)) Inspect(entry);
+                }
+            }
+            Inspect(root);
+            if (manifest.Boot.BootEntryId.HasValue)
+                await bcd.RemoveTemporaryEntryAsync(manifest.Boot.BootEntryId.Value, mode, cancellationToken).ConfigureAwait(false);
+            if (!mode.IsDryRun())
+            {
+                CommandFailureException.ThrowIfFailed("Enable Windows Recovery", await runner.RunAsync(new CommandSpec("reagentc.exe", ["/enable"], requiresElevation: true), cancellationToken).ConfigureAwait(false));
+                foreach (string file in entries.Where(File.Exists).Where(f => Path.GetRelativePath(root, f).StartsWith("Logs" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+                {
+                    string saved = PathValidator.ResolveUnderRoot(workDirectory, Path.Combine("DeploymentLogs", Path.GetRelativePath(root, file)));
+                    Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
+                    File.Copy(file, saved, true);
+                }
+                foreach (string file in entries.Where(File.Exists)) File.Delete(file);
+                foreach (string directory in entries.Where(Directory.Exists).OrderByDescending(d => d.Length)) Directory.Delete(directory);
+                Directory.Delete(root);
+            }
+            return;
+        }
         PartitionInfo stage = snapshot.Partitions.SingleOrDefault(partition => partition.GptPartitionId == manifest.StagingPartition.GptPartitionId)
             ?? throw new DeploymentSafetyException("cleanup.staging.missing", "Deployment partition could not be identified by GPT GUID.");
         if (stage.OffsetBytes != manifest.StagingPartition.OffsetBytes || stage.SizeBytes != manifest.StagingPartition.SizeBytes)

@@ -47,6 +47,8 @@ public sealed class DesktopPreparationOrchestrator(
     public async Task<DesktopPreparationResult> PrepareAsync(DesktopPreparationRequest request, IProgress<DeploymentProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.Plan.ExecutionMode.IsDryRun() && runner is not RecordingProcessRunner)
+            throw new DeploymentSafetyException("dryrun.runner", "Desktop DryRun requires a recording runner.");
         if (!request.Plan.ExecutionMode.IsDryRun() && (!request.Plan.DataLossAcknowledged || !request.Plan.FinalConfirmationAccepted))
         {
             throw new DeploymentSafetyException("confirmation.required", "Both destructive-operation confirmations are required.");
@@ -66,7 +68,7 @@ public sealed class DesktopPreparationOrchestrator(
             }
         }
 
-        PhysicalDiskSnapshot current = await disks.GetDiskAsync(request.Plan.TargetDisk.DiskNumber, cancellationToken).ConfigureAwait(false);
+        PhysicalDiskSnapshot current = await StagingSelection.ResolveAsync(disks, request.Plan.TargetDisk, cancellationToken).ConfigureAwait(false);
         DeploymentGuard.FixedInternalDisk(request.Plan.TargetDisk, "Windows target disk");
         DiskIdentityValidationResult identity = identities.Validate(request.Plan.TargetDisk, current.Identity);
         if (!identity.IsValid)
@@ -82,7 +84,7 @@ public sealed class DesktopPreparationOrchestrator(
 
         foreach (DiskIdentity expected in request.Plan.AdditionalDisksToErase)
         {
-            PhysicalDiskSnapshot additional = await disks.GetDiskAsync(expected.DiskNumber, cancellationToken).ConfigureAwait(false);
+            PhysicalDiskSnapshot additional = await StagingSelection.ResolveAsync(disks, expected, cancellationToken).ConfigureAwait(false);
             EnsureEraseDiskSafe(expected, additional, identities, "desktop");
         }
 
@@ -97,15 +99,44 @@ public sealed class DesktopPreparationOrchestrator(
         long requestedSize = Math.Max(
             6L * 1024 * 1024 * 1024,
             checked(new FileInfo(request.ImagePath).Length + staticPayloadBytes + DirectoryBytes(built.MediaRoot) + 2L * 1024 * 1024 * 1024));
-        PartitionInfo source = LocalStagingPartitionService.SelectShrinkSource(current, requestedSize);
-        var stageRequest = new StagingPartitionRequest(request.Plan.TargetDisk.DiskNumber, source.DriveLetter![0], request.StagingDriveLetter, requestedSize);
-        StagingPartitionIdentity partition = await localStaging.CreateAsync(request.Plan.TargetDisk, stageRequest, work, request.Plan.ExecutionMode, cancellationToken).ConfigureAwait(false);
+        var selectionChecks = await StagingSelection.CheckAsync(disks, request.Plan, requestedSize, cancellationToken).ConfigureAwait(false);
+        if (selectionChecks.Any(c => !c.Passed))
+            throw new DeploymentSafetyException("selection.failed", string.Join("; ", selectionChecks.Where(c => !c.Passed).Select(c => c.Code + ": " + c.Message)));
+        StagingPartitionIdentity partition;
+        if (request.Plan.StagingDisk is not null && !StagingSelection.SameDisk(request.Plan.TargetDisk, request.Plan.StagingDisk))
+        {
+            var storage = await StagingSelection.ResolveAsync(disks, request.Plan.StagingDisk, cancellationToken).ConfigureAwait(false);
+            var volume = StagingSelection.SeparateVolume(storage, requestedSize, request.Plan.StagingVolumeId);
+            string folder = $"EasyWin-Deployment/{request.Plan.PlanId:N}";
+            string volumeRoot = volume.DriveLetter + ":\\";
+            if (!request.Plan.ExecutionMode.IsDryRun())
+            {
+                var encryption = await new BitLockerService(runner).GetStatusAsync(volumeRoot, cancellationToken).ConfigureAwait(false);
+                if (encryption.IsEncrypted || encryption.IsProtectionEnabled)
+                    throw new DeploymentSafetyException("staging.bitlocker", "Separate staging requires an unencrypted volume accessible in WinPE.");
+            }
+            string folderRoot = PathValidator.ResolveUnderRoot(request.Plan.ExecutionMode.IsDryRun() ? Path.Combine(work, "DryRunStaging") : volumeRoot, folder);
+            if (Directory.Exists(folderRoot)) throw new DeploymentSafetyException("staging.exists", "Deployment folder already exists.");
+            Directory.CreateDirectory(folderRoot);
+            var acl = await runner.RunAsync(new CommandSpec("icacls.exe", [folderRoot, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"], requiresElevation: true), cancellationToken).ConfigureAwait(false);
+            CommandFailureException.ThrowIfFailed("Protect deployment folder", acl);
+            partition = new StagingPartitionIdentity { Disk = storage.Identity, Mode = StagingMode.SeparateDiskFolder,
+                FolderRelativePath = folder, RootPath = folderRoot, GptPartitionId = volume.GptPartitionId,
+                PartitionNumber = volume.PartitionNumber, OffsetBytes = volume.OffsetBytes, SizeBytes = volume.SizeBytes };
+        }
+        else
+        {
+            PartitionInfo source = LocalStagingPartitionService.SelectShrinkSource(current, requestedSize);
+            var stageRequest = new StagingPartitionRequest(current.Identity.DiskNumber, source.DriveLetter![0], request.StagingDriveLetter, requestedSize);
+            partition = await localStaging.CreateAsync(current.Identity, stageRequest, work, request.Plan.ExecutionMode, cancellationToken).ConfigureAwait(false);
+        }
 
         progress?.Report(new DeploymentProgress(DeploymentStage.PrepareBoot, "Копирование и проверка staged-файлов", 35));
         (DeploymentManifest manifest, string manifestPath) = await staging.BuildAsync(new StagingBuildRequest(request.Plan, partition, request.ImagePath, built.MediaRoot, request.PostInstallPayloadRoot, request.ConfigurationRoot, PayloadRoot: request.PayloadRoot), cancellationToken).ConfigureAwait(false);
         string root = partition.RootPath;
         string backup = Path.Combine(root, "Boot", "bcd.backup");
         var checkpoints = new DeploymentCheckpointService(manifests);
+        bool bootArmed = false;
         manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PrepareBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         try
         {
@@ -113,6 +144,7 @@ public sealed class DesktopPreparationOrchestrator(
                 backup,
                 Path.Combine(root, manifest.Boot.WinPeWimRelativePath.Replace('/', Path.DirectorySeparatorChar)),
                 Path.Combine(root, manifest.Boot.WinPeSdiRelativePath.Replace('/', Path.DirectorySeparatorChar))), request.Plan.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            bootArmed = true;
             if (request.Plan.ExecutionMode.IsDryRun() && !File.Exists(backup))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
@@ -137,6 +169,13 @@ public sealed class DesktopPreparationOrchestrator(
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PrepareBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.AwaitingWinPeBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             await manifests.ValidateAsync(manifest, root, true, cancellationToken).ConfigureAwait(false);
+            StagingSelection.Writable(await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false));
+            var beforeBootStorage = await StagingSelection.ResolveAsync(disks, partition.Disk, cancellationToken).ConfigureAwait(false);
+            var beforeBootVolume = StagingSelection.ValidatePartition(partition, beforeBootStorage);
+            if (!request.Plan.ExecutionMode.IsDryRun() && !Path.GetFullPath(root).TrimEnd('\\').Equals(StagingSelection.Root(partition, beforeBootVolume).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                throw new DeploymentSafetyException("staging.mapping.changed", "Staging mount changed before reboot.");
+            foreach (var erase in manifest.AdditionalDisksToErase)
+                EnsureEraseDiskSafe(erase, await StagingSelection.ResolveAsync(disks, erase, cancellationToken).ConfigureAwait(false), identities, "beforeboot");
             progress?.Report(new DeploymentProgress(DeploymentStage.AwaitingWinPeBoot, request.Plan.ExecutionMode.IsDryRun() ? "DryRun: перезагрузка WinPE смоделирована" : "Перезагрузка в WinPE", 45));
 
             if (!request.Plan.ExecutionMode.IsDryRun())
@@ -149,6 +188,11 @@ public sealed class DesktopPreparationOrchestrator(
         }
         catch (Exception exception)
         {
+            if (!request.Plan.ExecutionMode.IsDryRun() && bootArmed && File.Exists(backup))
+            {
+                var rollback = await runner.RunAsync(BcdCommandFactory.Import(backup), CancellationToken.None).ConfigureAwait(false);
+                CommandFailureException.ThrowIfFailed("Restore BCD after preparation failure", rollback);
+            }
             string code = exception is DeploymentSafetyException safety ? safety.Code : "desktop.prepare_boot.failed";
             try
             {
@@ -231,10 +275,22 @@ public sealed class WinPeDeploymentOrchestrator(
         {
             progress?.Report(new DeploymentProgress(DeploymentStage.ValidateManifest, "Проверка manifest и SHA-256", 46));
             manifest = await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+            if (manifest.ExecutionMode.IsDryRun() && runner is not RecordingProcessRunner)
+                throw new DeploymentSafetyException("dryrun.runner", "WinPE DryRun requires a recording runner.");
+            if (!manifest.ExecutionMode.IsDryRun())
+            {
+                if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Windows PE is required.");
+                using var miniNt = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\MiniNT");
+                if (miniNt is null || !File.Exists(Path.Combine(System.Environment.SystemDirectory, "wpeutil.exe")))
+                    throw new DeploymentSafetyException("winpe.environment", "Destructive deployment requires Windows PE.");
+                var environment = new WindowsEnvironmentProbe().Capture(Path.GetDirectoryName(manifestPath)!);
+                if (!environment.IsAdministrator || !environment.IsUefi)
+                    throw new DeploymentSafetyException("winpe.environment", "Administrator privileges and UEFI WinPE are required.");
+            }
             manifest = await checkpoints.BeginAttemptAsync(manifest, manifestPath, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.AwaitingWinPeBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ValidateManifest, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            PhysicalDiskSnapshot disk = await disks.GetDiskAsync(manifest.TargetDisk.DiskNumber, cancellationToken).ConfigureAwait(false);
+            PhysicalDiskSnapshot disk = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
             DeploymentGuard.FixedInternalDisk(manifest.TargetDisk, "Windows target disk");
             DiskIdentityValidationResult identity = identities.Validate(manifest.TargetDisk, disk.Identity);
             if (!identity.IsValid)
@@ -242,7 +298,9 @@ public sealed class WinPeDeploymentOrchestrator(
                 throw new DeploymentSafetyException("winpe.disk.changed", string.Join("; ", identity.Errors));
             }
 
-            PartitionInfo stage = disk.Partitions.SingleOrDefault(partition => partition.GptPartitionId == manifest.StagingPartition.GptPartitionId)
+            var storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+            StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
+            PartitionInfo stage = storage.Partitions.SingleOrDefault(partition => partition.GptPartitionId == manifest.StagingPartition.GptPartitionId)
                 ?? throw new DeploymentSafetyException("winpe.staging.missing", "Protected deployment partition is missing.");
             if (stage.OffsetBytes != manifest.StagingPartition.OffsetBytes || stage.SizeBytes != manifest.StagingPartition.SizeBytes)
             {
@@ -257,7 +315,9 @@ public sealed class WinPeDeploymentOrchestrator(
                     throw new DeploymentSafetyException("winpe.erase_disk.same_as_target", "The Windows target cannot also be an additional erase disk.");
                 }
 
-                PhysicalDiskSnapshot additional = await disks.GetDiskAsync(expected.DiskNumber, cancellationToken).ConfigureAwait(false);
+                PhysicalDiskSnapshot additional = await StagingSelection.ResolveAsync(disks, expected, cancellationToken).ConfigureAwait(false);
+                if (additional.Identity.DiskNumber == storage.Identity.DiskNumber || additional.Identity.DiskNumber == disk.Identity.DiskNumber)
+                    throw new DeploymentSafetyException("winpe.erase.overlap", "Additional erase disk overlaps target or staging.");
                 DeploymentGuard.FixedInternalDisk(expected, "Additional erase disk");
                 DiskIdentityValidationResult additionalIdentity = identities.Validate(expected, additional.Identity);
                 if (!additionalIdentity.IsValid)
@@ -280,13 +340,26 @@ public sealed class WinPeDeploymentOrchestrator(
 
             string stageRoot = Path.GetDirectoryName(manifestPath)!;
             string image = PathValidator.ResolveUnderRoot(stageRoot, manifest.Image.RelativePath, true);
-            new DeploymentSafetyValidator(identities).ValidateBeforeDestructive(manifest, disk, image);
+            new DeploymentSafetyValidator(identities).ValidateBeforeDestructive(manifest, disk, image, stagingDisk: storage);
+            if (!manifest.ExecutionMode.IsDryRun())
+            {
+                var editions = await images.GetEditionsAsync(image, cancellationToken).ConfigureAwait(false);
+                if (!editions.Any(e => e.ImageIndex == manifest.Image.ImageIndex && e.Architecture == manifest.Image.Architecture && e.EditionId == manifest.Image.EditionId))
+                    throw new DeploymentSafetyException("winpe.image.invalid", "Staged Windows edition does not match the manifest.");
+                if (!string.Equals(Path.GetFullPath(stageRoot).TrimEnd('\\'), StagingSelection.Root(manifest.StagingPartition, stage).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    throw new DeploymentSafetyException("winpe.staging.mapping", "Manifest is not on the validated staging volume.");
+                if (DriveInfo.GetDrives().Any(d => d.Name is "W:\\" or "S:\\" or "R:\\"))
+                    throw new DeploymentSafetyException("winpe.letters", "Required W:, S: or R: drive letter is occupied.");
+            }
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ValidateTargetDisk, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
 
             var prepare = new DiskPreparationRequest(disk.Identity.DiskNumber, stage.GptPartitionId, stage.PartitionNumber, stage.OffsetBytes, stage.SizeBytes);
             progress?.Report(new DeploymentProgress(DeploymentStage.PrepareDisk, "Подготовка GPT с защитой staging", 52));
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
-            await diskPart.ExecuteAsync(scripts.PrepareTargetPreservingDeployment(prepare, disk.Partitions), Path.GetDirectoryName(manifestPath)!, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
+                await diskPart.PrepareSeparateTargetAsync(disk, storage, stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            else
+                await diskPart.ExecuteAsync(scripts.PrepareTargetPreservingDeployment(prepare, disk.Partitions), stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
 
             progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, "Применение Windows через DISM", 60));
@@ -298,7 +371,8 @@ public sealed class WinPeDeploymentOrchestrator(
             await bootFiles.ConfigureAsync(new BootFilesRequest("W:\\", "S:\\", Locale: manifest.Language), manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ConfigureBoot, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.GenerateUnattend, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
-            await unattend.WriteAsync("W:\\Windows\\Panther\\unattend.xml", new UnattendOptions(manifest.Language, manifest.Language, manifest.TimeZone, manifest.ComputerName ?? "EASYWIN-PC", null), cancellationToken).ConfigureAwait(false);
+            string unattendPath = manifest.ExecutionMode.IsDryRun() ? Path.Combine(stageRoot, "DryRun", "unattend.xml") : "W:\\Windows\\Panther\\unattend.xml";
+            await unattend.WriteAsync(unattendPath, new UnattendOptions(manifest.Language, manifest.Language, manifest.TimeZone, manifest.ComputerName ?? "EASYWIN-PC", null), cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.GenerateUnattend, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             foreach (PhysicalDiskSnapshot additional in additionalDisks)
             {
@@ -313,6 +387,17 @@ public sealed class WinPeDeploymentOrchestrator(
             }
 
             await bootFiles.RegisterFirmwareAsync(new BootFilesRequest("W:\\", "S:\\", Locale: manifest.Language), manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
+            {
+                if (!manifest.ExecutionMode.IsDryRun()) Directory.CreateDirectory("R:\\Recovery\\WindowsRE");
+                foreach (var command in new[] {
+                    new CommandSpec("robocopy.exe", ["W:\\Windows\\System32\\Recovery", "R:\\Recovery\\WindowsRE", "winre.wim", "/COPY:DAT", "/R:1", "/W:1"], acceptableExitCodes: Enumerable.Range(0, 8).ToHashSet(), requiresElevation: true),
+                    new CommandSpec("reagentc.exe", ["/setreimage", "/path", "R:\\Recovery\\WindowsRE", "/target", "W:\\Windows"], requiresElevation: true) })
+                    CommandFailureException.ThrowIfFailed("Prepare target Recovery", await runner.RunAsync(command, cancellationToken).ConfigureAwait(false));
+                if (!manifest.ExecutionMode.IsDryRun() && !File.Exists("R:\\Recovery\\WindowsRE\\winre.wim"))
+                    throw new DeploymentSafetyException("winre.missing", "Recovery image was not copied.");
+                await diskPart.ExecuteAsync("select volume R\r\nremove letter=R\r\n", stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            }
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PreparePostInstall, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             await PreparePostInstallAsync(stageRoot, manifestPath, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PreparePostInstall, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
@@ -398,7 +483,9 @@ public sealed class PostInstallOrchestrator(
         var checkpoints = new DeploymentCheckpointService(manifests);
         try
         {
-            manifest = await json.DeserializeFileAsync<DeploymentManifest>(copiedManifestPath, cancellationToken).ConfigureAwait(false);
+            var candidate = await json.DeserializeFileAsync<DeploymentManifest>(copiedManifestPath, cancellationToken).ConfigureAwait(false);
+            await manifests.ValidateAsync(candidate, Path.GetDirectoryName(copiedManifestPath)!, false, cancellationToken).ConfigureAwait(false);
+            manifest = candidate;
             if (manifest.State.CompletedStages.Contains(DeploymentStage.Completed))
             {
                 progress?.Report(new DeploymentProgress(DeploymentStage.Completed, "PostInstall уже завершён", 100));
@@ -406,7 +493,9 @@ public sealed class PostInstallOrchestrator(
             }
 
             manifest = await checkpoints.BeginAttemptAsync(manifest, copiedManifestPath, cancellationToken).ConfigureAwait(false);
-            PhysicalDiskSnapshot disk = await disks.GetDiskAsync(manifest.TargetDisk.DiskNumber, cancellationToken).ConfigureAwait(false);
+            _ = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+            PhysicalDiskSnapshot disk = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+            StagingSelection.ValidatePartition(manifest.StagingPartition, disk);
             PartitionInfo stage = disk.Partitions.SingleOrDefault(partition => partition.GptPartitionId == manifest.StagingPartition.GptPartitionId)
                 ?? throw new DeploymentSafetyException("postinstall.staging.missing", "Deployment partition is missing; PostInstall stopped.");
             if (stage.OffsetBytes != manifest.StagingPartition.OffsetBytes || stage.SizeBytes != manifest.StagingPartition.SizeBytes)
@@ -427,6 +516,8 @@ public sealed class PostInstallOrchestrator(
                 stageRoot = $"{letter}:\\";
             }
 
+            if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
+                stageRoot = PathValidator.ResolveUnderRoot(stageRoot, manifest.StagingPartition.FolderRelativePath, true);
             await manifests.ValidateAsync(manifest, stageRoot, true, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.ValidateManifest, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
 

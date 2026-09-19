@@ -55,6 +55,7 @@ static string ResolveManifest(string[] values)
 {
     int index = Array.FindIndex(values, value => value.Equals("--manifest", StringComparison.OrdinalIgnoreCase));
     if (index >= 0 && index + 1 < values.Length && File.Exists(values[index + 1])) return Path.GetFullPath(values[index + 1]);
+    var candidates = new List<string>();
     foreach (DriveInfo drive in DriveInfo.GetDrives().Where(static drive => drive.IsReady))
     {
         try
@@ -62,13 +63,18 @@ static string ResolveManifest(string[] values)
             if (drive.VolumeLabel.Equals("EASYWIN_DEPLOY", StringComparison.OrdinalIgnoreCase))
             {
                 string path = Path.Combine(drive.RootDirectory.FullName, "manifest.json");
-                if (File.Exists(path)) return path;
+                if (File.Exists(path)) candidates.Add(path);
             }
+            string parent = Path.Combine(drive.RootDirectory.FullName, "EasyWin-Deployment");
+            if (Directory.Exists(parent) && (File.GetAttributes(parent) & FileAttributes.ReparsePoint) == 0)
+                foreach (string folder in Directory.EnumerateDirectories(parent))
+                    if (Guid.TryParseExact(Path.GetFileName(folder), "N", out _) && (File.GetAttributes(folder) & FileAttributes.ReparsePoint) == 0 && File.Exists(Path.Combine(folder, "manifest.json")))
+                        candidates.Add(Path.Combine(folder, "manifest.json"));
         }
         catch (IOException)
         {
         }
     }
 
-    throw new FileNotFoundException("EasyWin deployment manifest was not found.");
+    return candidates.Count == 1 ? candidates[0] : throw new InvalidDataException("EasyWin deployment manifest is missing or ambiguous.");
 }

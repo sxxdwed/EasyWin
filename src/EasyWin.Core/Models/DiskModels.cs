@@ -37,6 +37,8 @@ public sealed record PartitionInfo
 
     public long ShrinkAvailableBytes { get; init; }
 
+    public long FreeBytes { get; init; }
+
     public string? DriveLetter { get; init; }
 
     public string? VolumePath { get; init; }
@@ -52,6 +54,10 @@ public sealed record PartitionInfo
 
 public sealed record StagingPartitionIdentity
 {
+    public StagingMode Mode { get; init; } = StagingMode.SameDiskPartition;
+
+    public string FolderRelativePath { get; init; } = string.Empty;
+
     public DiskIdentity Disk { get; init; } = new();
 
     public int PartitionNumber { get; init; } = -1;
@@ -68,3 +74,5 @@ public sealed record StagingPartitionIdentity
 
     public string FileSystem { get; init; } = "NTFS";
 }
+
+public enum StagingMode { SameDiskPartition, SeparateDiskFolder }

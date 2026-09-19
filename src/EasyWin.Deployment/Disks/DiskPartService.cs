@@ -2,6 +2,7 @@ using EasyWin.Core.Models;
 using EasyWin.Core.Processes;
 using EasyWin.Deployment.Commands;
 using EasyWin.Deployment.Safety;
+using EasyWin.Deployment.Models;
 
 namespace EasyWin.Deployment.Disks;
 
@@ -10,6 +11,8 @@ public interface IDiskPartService
     IReadOnlyList<string> PlannedScripts { get; }
 
     Task ExecuteAsync(string script, string workingDirectory, ExecutionMode mode, CancellationToken cancellationToken = default);
+
+    Task PrepareSeparateTargetAsync(PhysicalDiskSnapshot target, PhysicalDiskSnapshot staging, string workingDirectory, ExecutionMode mode, CancellationToken cancellationToken = default);
 }
 
 public sealed class DiskPartService(IProcessRunner processRunner) : IDiskPartService
@@ -18,16 +21,23 @@ public sealed class DiskPartService(IProcessRunner processRunner) : IDiskPartSer
 
     public IReadOnlyList<string> PlannedScripts => _plannedScripts.AsReadOnly();
 
-    public async Task ExecuteAsync(
+    public Task PrepareSeparateTargetAsync(PhysicalDiskSnapshot target, PhysicalDiskSnapshot staging, string workingDirectory, ExecutionMode mode, CancellationToken cancellationToken = default) =>
+        ExecuteCoreAsync(new DiskPartScriptBuilder().PrepareTargetWithSeparateStaging(target, staging), workingDirectory, mode, true, cancellationToken);
+
+    public Task ExecuteAsync(string script, string workingDirectory, ExecutionMode mode, CancellationToken cancellationToken = default) =>
+        ExecuteCoreAsync(script, workingDirectory, mode, false, cancellationToken);
+
+    private async Task ExecuteCoreAsync(
         string script,
         string workingDirectory,
         ExecutionMode mode,
+        bool separateTarget,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         var root = DeploymentGuard.AbsolutePath(workingDirectory, "DiskPart working directory");
         Directory.CreateDirectory(root);
-        ValidateScript(script);
+        ValidateScript(script, separateTarget);
         _plannedScripts.Add(script);
         if (mode.IsDryRun())
         {
@@ -53,10 +63,10 @@ public sealed class DiskPartService(IProcessRunner processRunner) : IDiskPartSer
         }
     }
 
-    private static void ValidateScript(string script)
+    private static void ValidateScript(string script, bool separateTarget)
     {
         var commands = script.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (commands.Any(line => line.Equals("clean", StringComparison.OrdinalIgnoreCase) ||
+        if (!separateTarget && commands.Any(line => line.Equals("clean", StringComparison.OrdinalIgnoreCase) ||
                                  line.StartsWith("clean ", StringComparison.OrdinalIgnoreCase)))
         {
             throw new DeploymentSafetyException("diskpart.clean.forbidden", "DiskPart CLEAN is forbidden for one-disk local staging.");
@@ -69,6 +79,7 @@ public sealed class DiskPartService(IProcessRunner processRunner) : IDiskPartSer
             "set id=", "gpt attributes=", "detail partition", "list partition", "remove letter="
         };
         var unknown = commands.FirstOrDefault(command =>
+            !(separateTarget && command is "clean" or "convert gpt") &&
             !command.Equals("assign", StringComparison.OrdinalIgnoreCase) &&
             !allowedPrefixes.Any(prefix => command.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
         if (unknown is not null)

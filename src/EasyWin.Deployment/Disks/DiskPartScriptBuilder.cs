@@ -13,6 +13,21 @@ namespace EasyWin.Deployment.Disks;
 /// </summary>
 public sealed class DiskPartScriptBuilder
 {
+    public string PrepareTargetWithSeparateStaging(PhysicalDiskSnapshot target, PhysicalDiskSnapshot staging)
+    {
+        Staging.StagingSelection.Writable(target);
+        Staging.StagingSelection.Writable(staging);
+        if (target.Identity.DiskNumber == staging.Identity.DiskNumber || Staging.StagingSelection.SameDisk(target.Identity, staging.Identity))
+            throw new DeploymentSafetyException("layout.staging_is_target", "Separate staging must not be erased.");
+        if (target.Partitions.Any(p => p.Role == PartitionRole.Deployment))
+            throw new DeploymentSafetyException("layout.old_staging", "Target contains a protected deployment partition.");
+        return JoinLines($"select disk {DeploymentGuard.DiskNumber(target.Identity.DiskNumber)}", "clean", "convert gpt",
+            "create partition efi size=260", "format fs=fat32 quick label=\"SYSTEM\"", "assign letter=S",
+            "create partition msr size=16", "create partition primary", "format fs=ntfs quick label=\"Windows\"", "assign letter=W",
+            "shrink desired=1024 minimum=1024", "create partition primary size=1024", "format fs=ntfs quick label=\"Windows RE tools\"",
+            "assign letter=R", "set id=de94bba4-06d1-4d40-a16a-bfd50179d6ac", "gpt attributes=0x8000000000000001");
+    }
+
     private const long MiB = 1024L * 1024L;
 
     public string CreateStagingPartition(StagingPartitionRequest request)

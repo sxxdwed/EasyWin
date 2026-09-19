@@ -116,10 +116,25 @@ public sealed class ManifestService(IJsonSerializer json, IHashService hashes) :
             throw new InvalidDataException("Staging partition identity is incomplete.");
         }
 
-        if (manifest.StagingPartition.Disk != manifest.TargetDisk)
+        var validator = new Validation.DiskIdentityValidator();
+        if (!validator.Validate(manifest.StagingPartition.Disk, manifest.StagingPartition.Disk).IsValid)
+            throw new InvalidDataException("Staging disk identity is incomplete.");
+        bool same = validator.Validate(manifest.TargetDisk, manifest.StagingPartition.Disk).IsValid;
+        if (manifest.StagingPartition.Mode == StagingMode.SameDiskPartition)
         {
-            throw new InvalidDataException("Staging and target disk identities differ.");
+            if (!same || manifest.StagingPartition.FolderRelativePath.Length != 0)
+                throw new InvalidDataException("Same-disk staging identity is invalid.");
         }
+        else if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
+        {
+            if (same || manifest.StagingPartition.FolderRelativePath != $"EasyWin-Deployment/{manifest.PlanId:N}")
+                throw new InvalidDataException("Separate staging identity or folder is invalid.");
+            PathValidator.ValidateRelativePath(manifest.StagingPartition.FolderRelativePath);
+        }
+        else throw new InvalidDataException("Unknown staging mode.");
+        if (manifest.AdditionalDisksToErase.Any(d =>
+            validator.Validate(d, manifest.TargetDisk).IsValid || validator.Validate(d, manifest.StagingPartition.Disk).IsValid))
+            throw new InvalidDataException("Staging or target disk is also selected for additional erase.");
 
         PathValidator.ValidateRelativePath(manifest.Image.RelativePath);
         if (manifest.Image.ImageIndex < 1 || manifest.Image.LengthBytes <= 0 || !Sha256HashService.IsValidSha256(manifest.Image.Sha256))
@@ -144,9 +159,18 @@ public sealed class ManifestService(IJsonSerializer json, IHashService hashes) :
 
         ManifestFileEntry? imageEntry = manifest.FileInventory.FirstOrDefault(entry =>
             string.Equals(entry.RelativePath, manifest.Image.RelativePath, StringComparison.OrdinalIgnoreCase));
-        if (imageEntry is null || !string.Equals(imageEntry.Sha256, manifest.Image.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (imageEntry is null || !imageEntry.Required || imageEntry.LengthBytes != manifest.Image.LengthBytes || !string.Equals(imageEntry.Sha256, manifest.Image.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("The Windows image is absent from the file inventory or its hash differs.");
+        }
+        if (manifest.Boot.OneTimeBootConfigured)
+        {
+            foreach (string path in new[] { manifest.Boot.WinPeWimRelativePath, manifest.Boot.WinPeSdiRelativePath })
+            {
+                PathValidator.ValidateRelativePath(path);
+                if (!manifest.FileInventory.Any(e => e.Required && e.RelativePath.Equals(path, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidDataException("Required WinPE file is absent from the verified inventory: " + path);
+            }
         }
     }
 }

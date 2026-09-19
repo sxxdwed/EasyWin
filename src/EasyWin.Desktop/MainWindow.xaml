@@ -4,7 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="EasyWin — переустановка Windows"
+        Title="EasyWin 1.3.0-beta.1 — тестовая версия"
         Width="1280"
         Height="760"
         MinWidth="1080"
@@ -121,6 +121,9 @@
                             <TextBlock Style="{StaticResource SectionTitleStyle}" Text="Диски" />
                             <TextBlock Margin="0,0,0,6" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Куда установить Windows" />
                             <ComboBox ItemsSource="{Binding Disks}" SelectedItem="{Binding SelectedDisk}" DisplayMemberPath="DisplayName" AutomationProperties.Name="Целевой диск" />
+                            <TextBlock Margin="0,10,0,6" Foreground="#FFB7BB" Text="Диск Windows БУДЕТ ОЧИЩЕН" />
+                            <TextBlock Margin="0,10,0,6" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="Хранилище установки — отдельный диск НЕ БУДЕТ ОЧИЩЕН. Выберите диск Windows для режима с защищённым временным разделом." />
+                            <ComboBox ItemsSource="{Binding StagingDisks}" SelectedItem="{Binding SelectedStagingDisk}" DisplayMemberPath="DisplayName" AutomationProperties.Name="Хранилище установки" />
                             <TextBlock Margin="0,14,0,6" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Дополнительно очистить второй диск (необязательно)" />
                             <ItemsControl ItemsSource="{Binding AdditionalEraseDisks}">
                                 <ItemsControl.ItemTemplate>

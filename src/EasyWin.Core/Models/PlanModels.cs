@@ -10,6 +10,10 @@ public sealed record ReinstallPlan
 
     public DiskIdentity TargetDisk { get; init; } = new();
 
+    public DiskIdentity? StagingDisk { get; init; }
+
+    public Guid? StagingVolumeId { get; init; }
+
     public IReadOnlyList<DiskIdentity> AdditionalDisksToErase { get; init; } = Array.Empty<DiskIdentity>();
 
     public WindowsImageInfo Image { get; init; } = new();

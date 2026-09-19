@@ -18,6 +18,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private ProfileChoice? _selectedProfile;
     private string? _selectedLanguage;
     private DiskChoice? _selectedDisk;
+    private DiskChoice? _selectedStagingDisk;
+    public DiskChoice? SelectedStagingDisk
+    {
+        get => _selectedStagingDisk;
+        set
+        {
+            if (SetProperty(ref _selectedStagingDisk, value))
+            {
+                RebuildAdditionalDiskChoices();
+                DestructiveAcknowledged = false;
+                OnPropertyChanged(nameof(DiskSelectionSummary));
+                OnPropertyChanged(nameof(DestructiveAcknowledgementText));
+                InvalidateChecks();
+            }
+        }
+    }
+    public ObservableCollection<DiskChoice> StagingDisks { get; } = [];
     private DriverModeChoice? _selectedDriverMode;
     private bool _destructiveAcknowledged;
     private bool _isBusy;
@@ -74,7 +91,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         : $"Будет установлена: {SelectedEdition.DisplayName} · {SelectedEdition.Architecture}";
     public string DiskSelectionSummary => SelectedDisk is null
         ? "Выберите диск для Windows."
-        : $"Windows → {SelectedDisk.DisplayName} · {SelectedDisk.StagingCapacityText}" +
+        : $"Windows → {SelectedDisk.DisplayName} — БУДЕТ ОЧИЩЕН" +
+          (SelectedStagingDisk is null || SelectedStagingDisk == SelectedDisk
+              ? " · Хранилище: защищённый раздел на диске Windows"
+              : $" · Хранилище → {SelectedStagingDisk.DisplayName} — НЕ БУДЕТ ОЧИЩЕН") +
           (SelectedAdditionalDisks.Count == 0
               ? " · второй диск не очищается"
               : $" · очистить также → {SelectedAdditionalDisks[0].DisplayName}");
@@ -144,6 +164,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref _selectedDisk, value))
             {
+                StagingDisks.Clear();
+                foreach (var disk in Disks) StagingDisks.Add(disk);
+                SelectedStagingDisk = Disks.FirstOrDefault(d => d != value) ?? value;
                 RebuildAdditionalDiskChoices();
                 DestructiveAcknowledged = false;
                 OnPropertyChanged(nameof(DiskSelectionSummary));
@@ -503,7 +526,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             SelectedAdditionalDisks,
             Applications.Where(item => item.IsSelected).Select(item => item.Id).ToArray(),
             SelectedDriverMode.Id,
-            DryRun);
+            DryRun, SelectedStagingDisk);
         return true;
     }
 
@@ -520,7 +543,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         AdditionalEraseDisks.Clear();
-        foreach (DiskChoice disk in Disks.Where(disk => !ReferenceEquals(disk, SelectedDisk)))
+        foreach (DiskChoice disk in Disks.Where(disk => !ReferenceEquals(disk, SelectedDisk) && !ReferenceEquals(disk, SelectedStagingDisk)))
         {
             var item = new DiskEraseChoice(disk);
             item.SelectionChanged += OnAdditionalDiskSelectionChanged;
@@ -556,6 +579,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Checks.Add(new CheckDisplayItem("uefi", "Режим UEFI", true));
         Checks.Add(new CheckDisplayItem("target-disk", "Целевой диск", true));
         Checks.Add(new CheckDisplayItem("erase-disks", "Диски для очистки", true));
+        Checks.Add(new CheckDisplayItem("staging-disk", "Хранилище установки", true));
+        Checks.Add(new CheckDisplayItem("staging-capacity", "Место в хранилище", true));
+        Checks.Add(new CheckDisplayItem("disk-layout", "Разметка целевого диска", true));
         Checks.Add(new CheckDisplayItem("bitlocker", "BitLocker", true));
         Checks.Add(new CheckDisplayItem("image", "Образ Windows", true));
         Checks.Add(new CheckDisplayItem("space", "Свободное место", true));

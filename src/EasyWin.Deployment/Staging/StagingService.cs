@@ -77,6 +77,8 @@ public sealed class StagingService(IHashService hashes, IManifestService manifes
             PlanId = request.Plan.PlanId,
             ExecutionMode = request.Plan.ExecutionMode,
             TargetDisk = request.Plan.TargetDisk,
+            DataLossAcknowledged = request.Plan.DataLossAcknowledged,
+            FinalConfirmationAccepted = request.Plan.FinalConfirmationAccepted,
             AdditionalDisksToErase = request.Plan.AdditionalDisksToErase,
             StagingPartition = request.Partition,
             Image = new DeploymentImageReference

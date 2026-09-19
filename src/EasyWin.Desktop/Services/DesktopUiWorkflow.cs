@@ -135,16 +135,14 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             };
             bool pass = source?.Passed ?? descriptor.Id switch
             {
-                "target-disk" => diskValidation.TargetValid,
-                "erase-disks" => diskValidation.EraseValid,
+                "target-disk" or "erase-disks" or "staging-disk" or "staging-capacity" or "disk-layout" => diskValidation.Single(c => c.Code == descriptor.Id).Passed,
                 "staging" => Directory.Exists(DefaultAdkRoot()),
                 "hashes" => payloadsValid,
                 _ => false,
             };
             string message = source?.Message ?? descriptor.Id switch
             {
-                "target-disk" => diskValidation.TargetMessage,
-                "erase-disks" => diskValidation.EraseMessage,
+                "target-disk" or "erase-disks" or "staging-disk" or "staging-capacity" or "disk-layout" => diskValidation.Single(c => c.Code == descriptor.Id).Message,
                 "hashes" => payloadsMessage,
                 "staging" when !pass => "Windows ADK + WinPE add-on не найдены.",
                 _ => pass ? "Проверка пройдена." : "Проверка не пройдена.",
@@ -155,78 +153,15 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         return results;
     }
 
-    private async Task<(bool TargetValid, string TargetMessage, bool EraseValid, string EraseMessage)> ValidateDiskSelectionAsync(UiPreparationRequest request, CancellationToken cancellationToken)
+    private Task<IReadOnlyList<DiskSelectionCheck>> ValidateDiskSelectionAsync(UiPreparationRequest request, CancellationToken cancellationToken)
     {
-        if (request.TargetDisk.NativeIdentity is not DiskIdentity expected)
+        var plan = new ReinstallPlan
         {
-            return (false, "Стабильная идентичность целевого диска недоступна.", false, "Выбор дисков недействителен.");
-        }
-
-        try
-        {
-            if (!IsSupportedFixedDisk(expected))
-            {
-                return (false, "Для установки поддерживаются только внутренние SATA/NVMe/SAS/SCSI/RAID-диски.", false, "Выбор дисков недействителен.");
-            }
-
-            PhysicalDiskSnapshot current = await _disks.GetDiskAsync(expected.DiskNumber, cancellationToken).ConfigureAwait(false);
-            DiskIdentityValidationResult validation = new DiskIdentityValidator().Validate(expected, current.Identity);
-            if (!validation.IsValid)
-            {
-                return (false, string.Join("; ", validation.Errors), false, "Сначала исправьте выбор целевого диска.");
-            }
-
-            if (current.IsOffline || current.IsReadOnly || !current.PartitionStyle.Equals("GPT", StringComparison.OrdinalIgnoreCase))
-            {
-                return (false, "Целевой диск должен быть подключён, доступен для записи и иметь GPT-разметку.", false, "Выбор дисков недействителен.");
-            }
-
-            long requiredBytes = EstimateStagingBytes(request.IsoPath);
-            PartitionInfo source = LocalStagingPartitionService.SelectShrinkSource(current, requiredBytes);
-            string targetMessage = $"Подтверждён диск {expected.DiskNumber}, serial {expected.SerialNumber}; защищённый staging будет создан на {source.DriveLetter}: ({FormatGiB(requiredBytes)} GiB).";
-
-            if (request.AdditionalDisksToErase.Count > 1)
-            {
-                return (true, targetMessage, false, "Разрешён только один дополнительный диск: всего не более двух дисков за запуск.");
-            }
-
-            var selectedNumbers = new HashSet<int> { expected.DiskNumber };
-            foreach (DiskChoice choice in request.AdditionalDisksToErase)
-            {
-                if (choice.NativeIdentity is not DiskIdentity eraseIdentity ||
-                    !selectedNumbers.Add(eraseIdentity.DiskNumber) ||
-                    !IsSupportedFixedDisk(eraseIdentity))
-                {
-                    return (true, targetMessage, false, "Дополнительный диск совпадает с целевым, является внешним или не имеет стабильной идентичности.");
-                }
-
-                PhysicalDiskSnapshot eraseDisk = await _disks.GetDiskAsync(eraseIdentity.DiskNumber, cancellationToken).ConfigureAwait(false);
-                DiskIdentityValidationResult eraseValidation = new DiskIdentityValidator().Validate(eraseIdentity, eraseDisk.Identity);
-                if (!eraseValidation.IsValid || eraseDisk.IsOffline || eraseDisk.IsReadOnly || !eraseDisk.PartitionStyle.Equals("GPT", StringComparison.OrdinalIgnoreCase))
-                {
-                    return (true, targetMessage, false, eraseValidation.IsValid ? "Дополнительный диск недоступен для безопасной очистки." : string.Join("; ", eraseValidation.Errors));
-                }
-
-                if (eraseDisk.Partitions.Any(static partition => partition.Role == PartitionRole.Deployment))
-                {
-                    return (true, targetMessage, false, "Дополнительный диск содержит deployment-раздел EasyWin и не может быть очищен.");
-                }
-            }
-
-            if (!expected.IsSystemDisk && !request.AdditionalDisksToErase.Any(static disk => disk.IsSystemDisk))
-            {
-                return (true, targetMessage, false, "При установке Windows на другой диск текущий системный диск должен быть явно выбран для очистки, чтобы загрузчик не остался на старом SSD.");
-            }
-
-            string eraseMessage = request.AdditionalDisksToErase.Count == 0
-                ? "Дополнительный диск не выбран: будет очищен только диск Windows."
-                : $"Подтверждён второй диск: {request.AdditionalDisksToErase[0].DisplayName}. После очистки будет создан один раздел Data.";
-            return (true, targetMessage, true, eraseMessage);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            return (false, $"Не удалось безопасно подготовить целевой диск: {exception.Message}", false, "Выбор второго диска не подтверждён.");
-        }
+            TargetDisk = request.TargetDisk.NativeIdentity as DiskIdentity ?? new(),
+            StagingDisk = request.StagingDisk?.NativeIdentity as DiskIdentity,
+            AdditionalDisksToErase = request.AdditionalDisksToErase.Select(d => d.NativeIdentity as DiskIdentity ?? new()).ToArray(),
+        };
+        return StagingSelection.CheckAsync(_disks, plan, EstimateStagingBytes(request.IsoPath), cancellationToken);
     }
 
     private static async Task<(bool IsValid, string Message)> ValidateSelectedPayloadsAsync(
@@ -304,6 +239,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             {
                 ExecutionMode = ExecutionMode.Live,
                 TargetDisk = disk,
+                StagingDisk = request.StagingDisk?.NativeIdentity as DiskIdentity,
                 AdditionalDisksToErase = request.AdditionalDisksToErase
                     .Select(choice => choice.NativeIdentity as DiskIdentity ?? throw new InvalidDataException("Стабильная идентичность дополнительного диска потеряна."))
                     .ToArray(),
@@ -354,6 +290,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
     [
         ("administrator", "Права администратора"), ("uefi", "Режим UEFI"), ("target-disk", "Диск для Windows"),
         ("erase-disks", "Диски для очистки"),
+        ("staging-disk", "Диск хранения — сохраняется"), ("staging-capacity", "Место для установки"), ("disk-layout", "Разметка целевого диска"),
         ("bitlocker", "BitLocker"), ("image", "Образ Windows"), ("space", "Свободное место"),
         ("power", "Питание"), ("staging", "Deployment-среда"), ("hashes", "Целостность файлов"),
     ];
