@@ -1,3 +1,4 @@
+using EasyWin.Core.Catalogs;
 using EasyWin.Core.Manifests;
 using EasyWin.Core.Models;
 using EasyWin.Core.Processes;
@@ -38,6 +39,10 @@ public sealed class DryRunEngine
         var json = new SystemTextJsonSerializer();
         var manifests = new ManifestService(json, hashes);
         var checkpoints = new DeploymentCheckpointService(manifests);
+        var catalogs = new CatalogService(json);
+        InstallationProfile dryRunProfile = await catalogs.LoadProfileAsync(
+            Path.Combine(Path.GetFullPath(configurationRoot), "profiles", "lite.json"),
+            cancellationToken).ConfigureAwait(false);
         var diskPart = new DiskPartService(runner);
         var scripts = new DiskPartScriptBuilder();
 
@@ -95,7 +100,7 @@ public sealed class DryRunEngine
             TargetDisk = disk,
             AdditionalDisksToErase = [additionalDisk],
             Image = new WindowsImageInfo { SourcePath = image, ImageIndex = 6, Name = "Windows 11 Pro", EditionId = "Professional", Architecture = ProcessorArchitecture.X64, Container = WindowsImageContainer.Wim, SizeBytes = new FileInfo(image).Length },
-            ProfileId = "standard",
+            ProfileId = "lite",
             ApplicationIds = ["7zip"],
             DriverSelectionMode = DriverSelectionMode.Automatic,
             Language = "ru-RU",
@@ -191,11 +196,12 @@ public sealed class DryRunEngine
         await new DriverInstaller(runner, hashes).InstallAsync([new DriverPackage { Id = "chipset", Name = "Chipset", InfPath = "Drivers/Chipset/sample.inf", Sha256 = new string('0', 64), HardwareIds = ["PCI\\VEN_1234"] }], new HashSet<string>(["PCI\\VEN_1234&DEV_0001"], StringComparer.OrdinalIgnoreCase), stageRoot, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
         manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.InstallDrivers, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ApplyProfile, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-        await new ProfileApplicator(runner).ApplyAsync(new InstallationProfile { Id = "standard", DisplayName = "Standard", Settings = new Dictionary<string, string> { ["showFileExtensions"] = "true", ["disableConsumerSuggestions"] = "true" } }, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        await new ProfileApplicator(runner).ApplyAsync(dryRunProfile, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
         manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ApplyProfile, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ActivateWindows, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         _ = await new WindowsActivationService(runner).TryActivateAsync(ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
         manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ActivateWindows, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        stages.Add("Lite profile");
         stages.Add("PostInstall");
         manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.CleanupStaging, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         await diskPart.ExecuteAsync(scripts.RemoveStagingAndCreateRecovery(new FinalizeDiskRequest(0, partition.GptPartitionId, 5)), runRoot, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);

@@ -12,3 +12,5 @@ EasyWin treats all ISO paths, catalog files, manifests, removable media, install
 - Secure Boot, TPM, BitLocker, Defender, Windows Update, Store, Recovery, DISM/SFC, and the servicing stack are not disabled or bypassed.
 
 Application packages are intentionally metadata-only until the operator supplies an official installer and records its exact hash. EasyWin will not download or execute unknown binaries.
+
+The Lite profile may deprovision only the consumer AppX package identifiers compiled into `ProfileSafetyPolicy`. Profiles cannot request arbitrary package removal, and the allowlist excludes Microsoft Store, Edge, Defender, Windows Update, WinRE, servicing components, shells, drivers, and core Windows utilities.

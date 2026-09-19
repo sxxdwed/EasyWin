@@ -1,7 +1,7 @@
 {
   "id": "lite",
   "displayName": "Lite",
-  "description": "Безопасный облегчённый профиль: меньше рекомендаций, все механизмы обновления, защиты, Store и восстановления сохранены.",
+  "description": "Облегчённый профиль: удаляет выбранные потребительские приложения, Xbox/Game Bar и Teams. Update, Defender, Store, Edge и восстановление сохраняются.",
   "settings": {
     "showFileExtensions": "true",
     "showHiddenFiles": "false",
@@ -14,6 +14,26 @@
     "disableGameDvrBackgroundCapture": "true"
   },
   "defaultApplicationIds": [],
+  "removeProvisionedAppPackages": [
+    "Clipchamp.Clipchamp",
+    "Microsoft.BingNews",
+    "Microsoft.BingWeather",
+    "Microsoft.GamingApp",
+    "Microsoft.Getstarted",
+    "Microsoft.MicrosoftOfficeHub",
+    "Microsoft.MicrosoftSolitaireCollection",
+    "Microsoft.People",
+    "Microsoft.WindowsFeedbackHub",
+    "Microsoft.WindowsMaps",
+    "Microsoft.Xbox.TCUI",
+    "Microsoft.XboxApp",
+    "Microsoft.XboxGameOverlay",
+    "Microsoft.XboxGamingOverlay",
+    "Microsoft.XboxIdentityProvider",
+    "Microsoft.XboxSpeechToTextOverlay",
+    "Microsoft.YourPhone",
+    "MSTeams"
+  ],
   "preserveWindowsUpdate": true,
   "preserveDefender": true,
   "preserveMicrosoftStore": true,

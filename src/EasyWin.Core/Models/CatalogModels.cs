@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace EasyWin.Core.Models;
 
 public sealed record WindowsImageInfo
@@ -34,6 +36,8 @@ public sealed record InstallationProfile
 
     public IReadOnlyList<string> DefaultApplicationIds { get; init; } = Array.Empty<string>();
 
+    public IReadOnlyList<string> RemoveProvisionedAppPackages { get; init; } = Array.Empty<string>();
+
     public bool PreserveWindowsUpdate { get; init; } = true;
 
     public bool PreserveDefender { get; init; } = true;
@@ -43,6 +47,32 @@ public sealed record InstallationProfile
     public bool PreserveRecovery { get; init; } = true;
 
     public bool PreserveServicingStack { get; init; } = true;
+}
+
+public static class ProfileSafetyPolicy
+{
+    public static FrozenSet<string> RemovableProvisionedAppPackages { get; } =
+        new[]
+        {
+            "Clipchamp.Clipchamp",
+            "Microsoft.BingNews",
+            "Microsoft.BingWeather",
+            "Microsoft.GamingApp",
+            "Microsoft.Getstarted",
+            "Microsoft.MicrosoftOfficeHub",
+            "Microsoft.MicrosoftSolitaireCollection",
+            "Microsoft.People",
+            "Microsoft.WindowsFeedbackHub",
+            "Microsoft.WindowsMaps",
+            "Microsoft.Xbox.TCUI",
+            "Microsoft.XboxApp",
+            "Microsoft.XboxGameOverlay",
+            "Microsoft.XboxGamingOverlay",
+            "Microsoft.XboxIdentityProvider",
+            "Microsoft.XboxSpeechToTextOverlay",
+            "Microsoft.YourPhone",
+            "MSTeams",
+        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed record ApplicationPackage

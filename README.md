@@ -59,3 +59,9 @@ Logs are split by responsibility (`installer.log`, `boot.log`, `disk.log`, `dism
 ## Checkpoints and diagnostics
 
 EasyWin atomically updates the sealed deployment manifest before and after every important Desktop, WinPE, and PostInstall stage. The state records the attempt number, current and last successful stages, completion timestamps, whether recovery is required, and the last structured error. A partial JSON write cannot replace the previous valid manifest. Re-entering a phase preserves completed-stage history and starts a new numbered attempt; it does not silently treat an interrupted destructive step as completed.
+
+## Standard and Lite profiles
+
+`Standard` keeps the standard Windows application set and applies only privacy and Explorer preferences. `Lite` additionally deprovisions an explicit safety-allowlisted set of consumer applications such as Clipchamp, News, Weather, Office Hub, Solitaire, Feedback Hub, Maps, Phone Link, Teams, Xbox, and Game Bar packages. It does not remove or disable Microsoft Store, Edge, Windows Update, Defender, WinRE, the servicing stack, drivers, PowerShell, Terminal, Calculator, Photos, Paint, Notepad, or Snipping Tool. Removed Store applications can be installed again from Microsoft Store.
+
+Lite user preferences are written to the default user registry hive during PostInstall so they apply to the account created after setup, rather than only to the temporary SYSTEM account running SetupComplete.

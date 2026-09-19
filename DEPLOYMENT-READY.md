@@ -13,6 +13,6 @@ Before a real deployment, the operator must provide:
 
 The UI independently selects the Windows target and at most one optional second internal disk. Every selected disk is identified again in WinPE before destructive work. The staging partition is protected until the first successful boot, and Windows Boot Manager is used without a custom bootloader.
 
-Release validation for version 1.1.0: Release build completed with zero warnings and errors, 35/35 automated tests passed, and the end-to-end two-disk DryRun completed without executing destructive commands. Atomic checkpoints cover Desktop preparation, WinPE deployment, PostInstall, completion, and structured failure state.
+Release validation for version 1.2.0: Release build completed with zero warnings and errors, 38/38 automated tests passed, and the end-to-end two-disk Lite DryRun completed without executing destructive commands. Atomic checkpoints cover Desktop preparation, WinPE deployment, PostInstall, completion, and structured failure state. Lite removes only explicitly allowlisted consumer AppX packages and preserves protected Windows subsystems.
 
 Activation uses only the built-in Windows licensing service. EasyWin does not include Windows media, product keys, activation bypasses, KMS emulators, or other license-circumvention components.

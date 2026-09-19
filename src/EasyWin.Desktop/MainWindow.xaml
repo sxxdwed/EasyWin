@@ -154,6 +154,7 @@
                                 <StackPanel>
                                     <TextBlock Margin="0,0,0,6" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Профиль" />
                                     <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" DisplayMemberPath="DisplayName" AutomationProperties.Name="Профиль Windows" />
+                                    <TextBlock Margin="0,7,0,0" FontSize="11" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Text="{Binding SelectedProfile.Description}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Margin="0,0,0,6" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Text="Драйверы" />

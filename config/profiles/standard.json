@@ -11,6 +11,7 @@
     "disableTailoredExperiences": "true"
   },
   "defaultApplicationIds": [],
+  "removeProvisionedAppPackages": [],
   "preserveWindowsUpdate": true,
   "preserveDefender": true,
   "preserveMicrosoftStore": true,

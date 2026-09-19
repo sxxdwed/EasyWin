@@ -118,6 +118,8 @@ public sealed partial class DriverInstaller(IProcessRunner runner, IHashService 
 
 public sealed class ProfileApplicator(IProcessRunner runner)
 {
+    private const string DefaultHiveName = "EasyWinDefault";
+
     private static readonly IReadOnlyDictionary<string, RegistryValue> Allowed = new Dictionary<string, RegistryValue>(StringComparer.OrdinalIgnoreCase)
     {
         ["showFileExtensions"] = new("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "HideFileExt", "REG_DWORD", value => Bool(value) ? "0" : "1"),
@@ -139,22 +141,100 @@ public sealed class ProfileApplicator(IProcessRunner runner)
             throw new DeploymentSafetyException("profile.protected_subsystem", "The profile attempts to disable a protected Windows subsystem.");
         }
 
-        foreach ((string key, string value) in profile.Settings)
+        if (profile.RemoveProvisionedAppPackages.Any(package => !ProfileSafetyPolicy.RemovableProvisionedAppPackages.Contains(package)))
         {
-            if (!Allowed.TryGetValue(key, out RegistryValue? registry))
-            {
-                throw new DeploymentSafetyException("profile.setting.unknown", $"Unsupported profile setting '{key}'.");
-            }
-
-            var command = new CommandSpec("reg.exe", ["add", registry.Path, "/v", registry.Name, "/t", registry.Type, "/d", registry.Convert(value), "/f"], requiresElevation: true);
-            if (mode.IsDryRun() && runner is not RecordingProcessRunner)
-            {
-                continue;
-            }
-
-            ProcessResult result = await runner.RunAsync(command, cancellationToken).ConfigureAwait(false);
-            CommandFailureException.ThrowIfFailed($"Apply profile setting {key}", result);
+            throw new DeploymentSafetyException("profile.appx.unsafe", "The profile attempts to remove a protected or unapproved Windows application.");
         }
+
+        if (mode.IsDryRun() && runner is not RecordingProcessRunner)
+        {
+            return;
+        }
+
+        await ApplyDefaultUserSettingsAsync(profile, mode, cancellationToken).ConfigureAwait(false);
+        await RemoveProvisionedAppsAsync(profile, mode, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ApplyDefaultUserSettingsAsync(InstallationProfile profile, ExecutionMode mode, CancellationToken cancellationToken)
+    {
+        string systemRoot = Path.GetPathRoot(System.Environment.SystemDirectory) ?? "C:\\";
+        string defaultHive = Path.Combine(systemRoot, "Users", "Default", "NTUSER.DAT");
+        if (!mode.IsDryRun() && !File.Exists(defaultHive))
+        {
+            throw new FileNotFoundException("The default Windows user registry hive was not found.", defaultHive);
+        }
+
+        var unloadIfPresent = new CommandSpec(
+            "reg.exe",
+            ["unload", $"HKU\\{DefaultHiveName}"],
+            requiresElevation: true,
+            acceptableExitCodes: new HashSet<int> { 0, 1 },
+            logName: "postinstall.log");
+        _ = await runner.RunAsync(unloadIfPresent, cancellationToken).ConfigureAwait(false);
+        await RunAsync(
+            new CommandSpec("reg.exe", ["load", $"HKU\\{DefaultHiveName}", defaultHive], requiresElevation: true, logName: "postinstall.log"),
+            "Load default user registry hive",
+            cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            foreach ((string key, string value) in profile.Settings)
+            {
+                if (!Allowed.TryGetValue(key, out RegistryValue? registry))
+                {
+                    throw new DeploymentSafetyException("profile.setting.unknown", $"Unsupported profile setting '{key}'.");
+                }
+
+                string defaultUserPath = registry.Path.StartsWith("HKCU\\", StringComparison.OrdinalIgnoreCase)
+                    ? $"HKU\\{DefaultHiveName}\\{registry.Path[5..]}"
+                    : throw new DeploymentSafetyException("profile.registry.scope", "Only default-user registry settings are allowed.");
+                var command = new CommandSpec(
+                    "reg.exe",
+                    ["add", defaultUserPath, "/v", registry.Name, "/t", registry.Type, "/d", registry.Convert(value), "/f"],
+                    requiresElevation: true,
+                    logName: "postinstall.log");
+                await RunAsync(command, $"Apply profile setting {key}", cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            var unload = new CommandSpec(
+                "reg.exe",
+                ["unload", $"HKU\\{DefaultHiveName}"],
+                requiresElevation: true,
+                logName: "postinstall.log");
+            await RunAsync(unload, "Unload default user registry hive", CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RemoveProvisionedAppsAsync(InstallationProfile profile, ExecutionMode mode, CancellationToken cancellationToken)
+    {
+        foreach (string package in profile.RemoveProvisionedAppPackages.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!ProfileSafetyPolicy.RemovableProvisionedAppPackages.Contains(package) ||
+                package.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '.'))
+            {
+                throw new DeploymentSafetyException("profile.appx.invalid", $"Unsupported provisioned application id '{package}'.");
+            }
+
+            string script =
+                "$ErrorActionPreference='Stop'; " +
+                $"Get-AppxPackage -AllUsers -Name '{package}' | ForEach-Object {{ Remove-AppxPackage -Package $_.PackageFullName -AllUsers -Confirm:$false }}; " +
+                $"Get-AppxProvisionedPackage -Online | Where-Object {{ $_.DisplayName -eq '{package}' }} | ForEach-Object {{ Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -AllUsers | Out-Null }}";
+            var command = new CommandSpec(
+                "powershell.exe",
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                requiresElevation: true,
+                timeout: TimeSpan.FromMinutes(5),
+                logName: "postinstall.log");
+            await RunAsync(command, $"Remove provisioned app {package}", cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunAsync(CommandSpec command, string stage, CancellationToken cancellationToken)
+    {
+        ProcessResult result = await runner.RunAsync(command, cancellationToken).ConfigureAwait(false);
+        CommandFailureException.ThrowIfFailed(stage, result);
     }
 
     private static bool Bool(string value) => bool.TryParse(value, out bool result) && result;

@@ -60,7 +60,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         var profiles = new[]
         {
             new ProfileChoice("standard", "Standard", "Стандартная конфигурация Windows без удаления системных компонентов."),
-            new ProfileChoice("lite", "Lite", "Безопасный облегчённый профиль с сохранением Update, Defender, Store, Recovery и servicing stack."),
+            new ProfileChoice("lite", "Lite", "Удаляет выбранные потребительские приложения, Xbox/Game Bar и Teams. Update, Defender, Store, Edge и Recovery сохраняются."),
         };
         string configRoot = FindConfigRoot();
         ApplicationCatalog appCatalog = await new CatalogService(new SystemTextJsonSerializer())
@@ -233,11 +233,6 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         UiPreparationRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.ApplicationIds.Count == 0)
-        {
-            return (true, "Дополнительные пакеты не выбраны; системные файлы будут хэшированы при staging.");
-        }
-
         try
         {
             string configRoot = FindConfigRoot();
@@ -247,6 +242,11 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             ApplicationCatalog catalog = await catalogs.LoadApplicationsAsync(Path.Combine(configRoot, "apps", "catalog.json"), cancellationToken).ConfigureAwait(false);
             _ = await catalogs.LoadDriversAsync(Path.Combine(configRoot, "drivers", "catalog.json"), cancellationToken).ConfigureAwait(false);
             _ = await catalogs.LoadProfileAsync(Path.Combine(configRoot, "profiles", $"{request.Profile.Id}.json"), cancellationToken).ConfigureAwait(false);
+
+            if (request.ApplicationIds.Count == 0)
+            {
+                return (true, "Профиль проверен; дополнительные пакеты не выбраны. Системные файлы будут хэшированы при staging.");
+            }
 
             foreach (string id in request.ApplicationIds)
             {

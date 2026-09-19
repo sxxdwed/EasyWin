@@ -16,8 +16,15 @@ public sealed class CatalogAndDryRunTests
     {
         string root = TestData.FindConfigRoot();
         var catalogs = new CatalogService(new SystemTextJsonSerializer());
-        Assert.Equal("standard", (await catalogs.LoadProfileAsync(Path.Combine(root, "profiles", "standard.json"))).Id);
-        Assert.Equal("lite", (await catalogs.LoadProfileAsync(Path.Combine(root, "profiles", "lite.json"))).Id);
+        InstallationProfile standard = await catalogs.LoadProfileAsync(Path.Combine(root, "profiles", "standard.json"));
+        InstallationProfile lite = await catalogs.LoadProfileAsync(Path.Combine(root, "profiles", "lite.json"));
+        Assert.Equal("standard", standard.Id);
+        Assert.Empty(standard.RemoveProvisionedAppPackages);
+        Assert.Equal("lite", lite.Id);
+        Assert.Equal(18, lite.RemoveProvisionedAppPackages.Count);
+        Assert.Contains("Microsoft.XboxGamingOverlay", lite.RemoveProvisionedAppPackages);
+        Assert.Contains("MSTeams", lite.RemoveProvisionedAppPackages);
+        Assert.DoesNotContain("Microsoft.WindowsStore", lite.RemoveProvisionedAppPackages);
         ApplicationCatalog apps = await catalogs.LoadApplicationsAsync(Path.Combine(root, "apps", "catalog.json"));
         Assert.Equal(10, apps.Applications.Count);
         Assert.Contains(apps.Applications, app => app.Id == "nvidia-app" && app.RequiredHardwareIdPrefixes.Contains("PCI\\VEN_10DE"));
@@ -40,9 +47,11 @@ public sealed class CatalogAndDryRunTests
         Assert.Contains("Windows install", report.Stages);
         Assert.True(report.Stages.ToList().IndexOf("Windows install") < report.Stages.ToList().IndexOf("second disk erase"));
         Assert.Contains("PostInstall", report.Stages);
+        Assert.Contains("Lite profile", report.Stages);
         Assert.DoesNotContain(report.DiskPartScripts, script => script.Split(['\r', '\n']).Any(line => line.Trim().Equals("clean", StringComparison.OrdinalIgnoreCase)));
         Assert.Contains(report.DiskPartScripts, script => script.StartsWith("select disk 1", StringComparison.OrdinalIgnoreCase));
         Assert.NotEmpty(report.RecordedCommands);
+        Assert.Contains(report.RecordedCommands, command => command.Contains("Remove-AppxProvisionedPackage", StringComparison.Ordinal));
         DeploymentManifest manifest = await new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService())
             .LoadAndValidateAsync(report.ManifestPath, verifyFiles: true);
         Assert.Equal(DeploymentStage.Completed, manifest.State.CurrentStage);
@@ -78,5 +87,54 @@ public sealed class CatalogAndDryRunTests
 
         Assert.Empty(runner.Commands);
         Assert.Equal("Skipped: incompatible hardware", Assert.Single(results).Message);
+    }
+
+    [Fact]
+    public async Task LiteProfile_AppliesDefaultUserSettingsAndOnlyAllowlistedAppRemoval()
+    {
+        string config = TestData.FindConfigRoot();
+        InstallationProfile lite = await new CatalogService(new SystemTextJsonSerializer())
+            .LoadProfileAsync(Path.Combine(config, "profiles", "lite.json"));
+        var runner = new RecordingProcessRunner();
+
+        await new ProfileApplicator(runner).ApplyAsync(lite, ExecutionMode.DryRun);
+
+        string[] commands = runner.Commands.Select(static command => command.ToDisplayString()).ToArray();
+        Assert.Contains(commands, command => command.Contains("reg.exe add HKU\\EasyWinDefault\\", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, command => command.Contains("reg.exe add HKCU\\", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(commands, command => command.Contains("Clipchamp.Clipchamp", StringComparison.Ordinal));
+        Assert.Contains(commands, command => command.Contains("Microsoft.XboxGamingOverlay", StringComparison.Ordinal));
+        Assert.DoesNotContain(commands, command => command.Contains("Microsoft.WindowsStore", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(commands, command => command.Contains("MicrosoftEdge", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(lite.RemoveProvisionedAppPackages.Count, runner.Commands.Count(command =>
+            Path.GetFileName(command.FileName).Equals("powershell.exe", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public async Task StandardProfile_DoesNotRemoveProvisionedApplications()
+    {
+        string config = TestData.FindConfigRoot();
+        InstallationProfile standard = await new CatalogService(new SystemTextJsonSerializer())
+            .LoadProfileAsync(Path.Combine(config, "profiles", "standard.json"));
+        var runner = new RecordingProcessRunner();
+
+        await new ProfileApplicator(runner).ApplyAsync(standard, ExecutionMode.DryRun);
+
+        Assert.DoesNotContain(runner.Commands, command =>
+            Path.GetFileName(command.FileName).Equals("powershell.exe", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ProfileApplicator_RejectsRemovalOutsideSafetyAllowlist()
+    {
+        var profile = new InstallationProfile
+        {
+            Id = "unsafe",
+            DisplayName = "Unsafe",
+            RemoveProvisionedAppPackages = ["Microsoft.WindowsStore"],
+        };
+
+        await Assert.ThrowsAsync<EasyWin.Deployment.Safety.DeploymentSafetyException>(() =>
+            new ProfileApplicator(new RecordingProcessRunner()).ApplyAsync(profile, ExecutionMode.DryRun));
     }
 }

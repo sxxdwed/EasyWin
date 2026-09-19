@@ -29,6 +29,12 @@ public sealed class CatalogService(IJsonSerializer json) : ICatalogService
             throw new InvalidDataException("EasyWin profiles may not disable protected Windows subsystems.");
         }
 
+        if (value.RemoveProvisionedAppPackages.Distinct(StringComparer.OrdinalIgnoreCase).Count() != value.RemoveProvisionedAppPackages.Count ||
+            value.RemoveProvisionedAppPackages.Any(package => !ProfileSafetyPolicy.RemovableProvisionedAppPackages.Contains(package)))
+        {
+            throw new InvalidDataException("The profile contains a duplicate or unsafe provisioned application removal.");
+        }
+
         return value;
     }
 
