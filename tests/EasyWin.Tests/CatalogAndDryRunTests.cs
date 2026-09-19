@@ -1,4 +1,5 @@
 using EasyWin.Core.Catalogs;
+using EasyWin.Core.Manifests;
 using EasyWin.Core.Models;
 using EasyWin.Core.Processes;
 using EasyWin.Core.Security;
@@ -42,6 +43,16 @@ public sealed class CatalogAndDryRunTests
         Assert.DoesNotContain(report.DiskPartScripts, script => script.Split(['\r', '\n']).Any(line => line.Trim().Equals("clean", StringComparison.OrdinalIgnoreCase)));
         Assert.Contains(report.DiskPartScripts, script => script.StartsWith("select disk 1", StringComparison.OrdinalIgnoreCase));
         Assert.NotEmpty(report.RecordedCommands);
+        DeploymentManifest manifest = await new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService())
+            .LoadAndValidateAsync(report.ManifestPath, verifyFiles: true);
+        Assert.Equal(DeploymentStage.Completed, manifest.State.CurrentStage);
+        Assert.Equal(DeploymentStage.Completed, manifest.State.LastSuccessfulStage);
+        Assert.Contains(DeploymentStage.ApplyImage, manifest.State.CompletedStages);
+        Assert.Contains(DeploymentStage.InstallDrivers, manifest.State.CompletedStages);
+        Assert.Contains(DeploymentStage.CleanupStaging, manifest.State.CompletedStages);
+        Assert.False(manifest.State.RecoveryRequired);
+        Assert.Null(manifest.State.LastError);
+        Assert.True(manifest.State.AttemptNumber >= 1);
     }
 
     [Fact]

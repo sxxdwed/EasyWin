@@ -37,6 +37,7 @@ public sealed class DryRunEngine
         var hashes = new Sha256HashService();
         var json = new SystemTextJsonSerializer();
         var manifests = new ManifestService(json, hashes);
+        var checkpoints = new DeploymentCheckpointService(manifests);
         var diskPart = new DiskPartService(runner);
         var scripts = new DiskPartScriptBuilder();
 
@@ -122,7 +123,13 @@ public sealed class DryRunEngine
             FileInventory = manifest.FileInventory.Append(new ManifestFileEntry { RelativePath = "Boot/bcd.backup", Sha256 = await hashes.ComputeSha256Async(backup, cancellationToken).ConfigureAwait(false), LengthBytes = backupInfo.Length, Kind = ManifestFileKind.BcdBackup }).ToArray(),
         };
         await manifests.SaveAsync(manifest, manifestPath, cancellationToken).ConfigureAwait(false);
-        await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PrepareBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.AwaitingWinPeBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.BeginAttemptAsync(manifest, manifestPath, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.AwaitingWinPeBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ValidateManifest, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ValidateTargetDisk, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
 
         stages.Add("WinPE autostart");
         stages.Add("validation");
@@ -133,7 +140,9 @@ public sealed class DryRunEngine
             new PartitionInfo { DiskNumber = 0, PartitionNumber = 3, GptPartitionId = Guid.NewGuid(), DriveLetter = "C", OffsetBytes = 400L * 1024 * 1024, SizeBytes = partition.OffsetBytes - 400L * 1024 * 1024, Role = PartitionRole.Windows },
             new PartitionInfo { DiskNumber = 0, PartitionNumber = 5, GptPartitionId = partition.GptPartitionId, DriveLetter = "E", OffsetBytes = partition.OffsetBytes, SizeBytes = partition.SizeBytes, Role = PartitionRole.Deployment },
         };
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         await diskPart.ExecuteAsync(scripts.PrepareTargetPreservingDeployment(new DiskPreparationRequest(0, partition.GptPartitionId, 5, partition.OffsetBytes, partition.SizeBytes), partitions), runRoot, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         var additionalPartitions = new[]
         {
             new PartitionInfo { DiskNumber = 1, PartitionNumber = 1, GptPartitionId = Guid.NewGuid(), OffsetBytes = 1024 * 1024, SizeBytes = 260L * 1024 * 1024, Role = PartitionRole.EfiSystem },
@@ -143,33 +152,56 @@ public sealed class DryRunEngine
         };
         stages.Add("Windows install");
         var imageService = new WindowsImageService(runner);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ApplyImage, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         await imageService.ApplyAsync(new ApplyImageRequest(Path.Combine(stageRoot, manifest.Image.RelativePath.Replace('/', Path.DirectorySeparatorChar)), manifest.Image.ImageIndex, "W:\\"), cancellationToken: cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ApplyImage, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         stages.Add("BCDBoot + unattend");
         var bootFiles = new BootFilesService(runner);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ConfigureBoot, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         await bootFiles.ConfigureAsync(new BootFilesRequest("W:\\", "S:\\", Locale: "ru-RU"), ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ConfigureBoot, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         string offline = Path.Combine(runRoot, "offline", "Windows", "Panther", "unattend.xml");
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.GenerateUnattend, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         await new UnattendGenerator().WriteAsync(offline, new UnattendOptions("ru-RU", "ru-RU", "Russian Standard Time", "EASYWIN-PC", null), cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.GenerateUnattend, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PartitionDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         await diskPart.ExecuteAsync(
             scripts.EraseAdditionalDiskAndCreateDataVolume(new AdditionalDiskEraseRequest(1), additionalPartitions),
             runRoot,
             ExecutionMode.DryRun,
             cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PartitionDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
         await bootFiles.RegisterFirmwareAsync(new BootFilesRequest("W:\\", "S:\\", Locale: "ru-RU"), ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PreparePostInstall, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PreparePostInstall, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.AwaitingFirstBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         stages.Add("second disk erase");
         stages.Add("reboot");
 
         string fakeApp = Path.Combine(stageRoot, "Apps", "7Zip", "setup.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(fakeApp)!);
         await File.WriteAllTextAsync(fakeApp, "dryrun installer", cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.InstallApplications, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         await new ApplicationInstaller(runner, hashes).InstallAsync([new ApplicationPackage { Id = "7zip", Name = "7-Zip", Installer = "Apps/7Zip/setup.exe", Arguments = ["/S"], Sha256 = new string('0', 64) }], stageRoot, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.InstallApplications, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         string fakeInf = Path.Combine(stageRoot, "Drivers", "Chipset", "sample.inf");
         Directory.CreateDirectory(Path.GetDirectoryName(fakeInf)!);
         await File.WriteAllTextAsync(fakeInf, "[Version]", cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.InstallDrivers, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         await new DriverInstaller(runner, hashes).InstallAsync([new DriverPackage { Id = "chipset", Name = "Chipset", InfPath = "Drivers/Chipset/sample.inf", Sha256 = new string('0', 64), HardwareIds = ["PCI\\VEN_1234"] }], new HashSet<string>(["PCI\\VEN_1234&DEV_0001"], StringComparer.OrdinalIgnoreCase), stageRoot, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.InstallDrivers, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ApplyProfile, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         await new ProfileApplicator(runner).ApplyAsync(new InstallationProfile { Id = "standard", DisplayName = "Standard", Settings = new Dictionary<string, string> { ["showFileExtensions"] = "true", ["disableConsumerSuggestions"] = "true" } }, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ApplyProfile, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ActivateWindows, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        _ = await new WindowsActivationService(runner).TryActivateAsync(ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ActivateWindows, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         stages.Add("PostInstall");
+        manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.CleanupStaging, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         await diskPart.ExecuteAsync(scripts.RemoveStagingAndCreateRecovery(new FinalizeDiskRequest(0, partition.GptPartitionId, 5)), runRoot, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
         await bcd.RemoveTemporaryEntryAsync(entry.LoaderId, ExecutionMode.DryRun, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.CleanupStaging, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
+        manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.Completed, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         stages.Add("cleanup");
         stages.Add("finished");
 

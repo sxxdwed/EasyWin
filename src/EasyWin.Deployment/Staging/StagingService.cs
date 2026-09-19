@@ -64,6 +64,14 @@ public sealed class StagingService(IHashService hashes, IManifestService manifes
         }
 
         ManifestFileEntry imageEntry = inventory.Single(item => item.RelativePath.Equals(imageRelative, StringComparison.OrdinalIgnoreCase));
+        DateTimeOffset stagedAt = DateTimeOffset.UtcNow;
+        DeploymentStage[] initialStages =
+        [
+            DeploymentStage.ValidateEnvironment,
+            DeploymentStage.ValidateImage,
+            DeploymentStage.ValidateTargetDisk,
+            DeploymentStage.PrepareStaging,
+        ];
         var manifest = new DeploymentManifest
         {
             PlanId = request.Plan.PlanId,
@@ -96,7 +104,14 @@ public sealed class StagingService(IHashService hashes, IManifestService manifes
             TimeZone = request.Plan.TimeZone,
             ComputerName = request.Plan.ComputerName,
             FileInventory = inventory.OrderBy(static item => item.RelativePath, StringComparer.OrdinalIgnoreCase).ToArray(),
-            State = new DeploymentState { CurrentStage = DeploymentStage.PrepareBoot, CompletedStages = [DeploymentStage.ValidateEnvironment, DeploymentStage.ValidateImage, DeploymentStage.ValidateTargetDisk, DeploymentStage.PrepareStaging] },
+            State = new DeploymentState
+            {
+                CurrentStage = DeploymentStage.PrepareBoot,
+                CompletedStages = initialStages,
+                Checkpoints = initialStages.ToDictionary(static stage => stage.ToString(), _ => stagedAt, StringComparer.OrdinalIgnoreCase),
+                LastSuccessfulStage = DeploymentStage.PrepareStaging,
+                UpdatedAtUtc = stagedAt,
+            },
         };
         string path = Path.Combine(root, "manifest.json");
         await manifests.SaveAsync(manifest, path, cancellationToken).ConfigureAwait(false);

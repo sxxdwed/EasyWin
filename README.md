@@ -55,3 +55,7 @@ Profiles, applications, and driver packages are JSON. Installer and driver paths
 The desktop application reads its application choices from the catalog rather than a hardcoded list. The prepared payload includes NVIDIA App, AMD Software: Adrenalin auto-detect, and MSI Center in addition to the standard applications. Vendor packages may declare hardware ID prefixes: incompatible entries are disabled in the UI and are skipped again by PostInstall as a second safety check. NVIDIA App and MSI Center are staged as offline installers; AMD's official auto-detect bootstrap requires an Internet connection after first boot to obtain the hardware-specific package.
 
 Logs are split by responsibility (`installer.log`, `boot.log`, `disk.log`, `dism.log`, and `postinstall.log`) and each failure includes its deployment stage, tool exit code when available, and a user-facing reason.
+
+## Checkpoints and diagnostics
+
+EasyWin atomically updates the sealed deployment manifest before and after every important Desktop, WinPE, and PostInstall stage. The state records the attempt number, current and last successful stages, completion timestamps, whether recovery is required, and the last structured error. A partial JSON write cannot replace the previous valid manifest. Re-entering a phase preserves completed-stage history and starts a new numbered attempt; it does not silently treat an interrupted destructive step as completed.

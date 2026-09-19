@@ -2,7 +2,7 @@ namespace EasyWin.Core.Models;
 
 public static class DeploymentManifestSchema
 {
-    public const string CurrentVersion = "1.1";
+    public const string CurrentVersion = "1.2";
     public const string HashAlgorithm = "SHA-256";
 }
 
@@ -63,6 +63,12 @@ public sealed record DeploymentState
         new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
 
     public DateTimeOffset UpdatedAtUtc { get; init; } = DateTimeOffset.UtcNow;
+
+    public int AttemptNumber { get; init; }
+
+    public DeploymentStage? LastSuccessfulStage { get; init; }
+
+    public bool RecoveryRequired { get; init; }
 
     public DeploymentError? LastError { get; init; }
 }

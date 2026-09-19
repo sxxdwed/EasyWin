@@ -210,6 +210,62 @@ public sealed class SafetyTests
         Assert.Throws<DeploymentSafetyException>(() => new DeploymentSafetyValidator(new DiskIdentityValidator()).ValidateBeforeDestructive(manifest, Snapshot(manifest), image));
     }
 
+    [Fact]
+    public async Task DeploymentCheckpoints_PersistAttemptStageAndFailureAtomically()
+    {
+        (DeploymentManifest manifest, string root) = await CreateManifestAsync();
+        string path = Path.Combine(root, "manifest.json");
+        var service = new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService());
+        var checkpoints = new DeploymentCheckpointService(service);
+        await service.SaveAsync(manifest, path);
+
+        manifest = await checkpoints.BeginAttemptAsync(manifest, path);
+        manifest = await checkpoints.StartAsync(manifest, path, DeploymentStage.PrepareDisk, recoveryRequired: true);
+        manifest = await checkpoints.CompleteAsync(manifest, path, DeploymentStage.PrepareDisk, recoveryRequired: true);
+        manifest = await checkpoints.FailAsync(manifest, path, "test.failure", "Test failure", "details", recoverable: true);
+
+        DeploymentManifest loaded = await service.LoadAndValidateAsync(path, verifyFiles: true);
+        Assert.Equal(1, loaded.State.AttemptNumber);
+        Assert.Equal(DeploymentStage.Failed, loaded.State.CurrentStage);
+        Assert.Equal(DeploymentStage.PrepareDisk, loaded.State.LastSuccessfulStage);
+        Assert.Contains(DeploymentStage.PrepareDisk, loaded.State.CompletedStages);
+        Assert.True(loaded.State.RecoveryRequired);
+        Assert.Equal("test.failure", loaded.State.LastError?.Code);
+        Assert.Empty(Directory.EnumerateFiles(root, ".manifest.json.*.tmp"));
+    }
+
+    [Fact]
+    public async Task ManifestValidation_LastSuccessfulStageMustBeCompleted_Fails()
+    {
+        (DeploymentManifest manifest, _) = await CreateManifestAsync();
+        manifest = manifest with
+        {
+            State = manifest.State with { LastSuccessfulStage = DeploymentStage.ApplyImage },
+        };
+        var service = new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService());
+        Assert.Throws<InvalidDataException>(() => service.Seal(manifest));
+    }
+
+    [Fact]
+    public async Task DeploymentCheckpoints_NewAttemptPreservesCompletedStagesAndClearsError()
+    {
+        (DeploymentManifest manifest, string root) = await CreateManifestAsync();
+        string path = Path.Combine(root, "manifest.json");
+        var service = new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService());
+        var checkpoints = new DeploymentCheckpointService(service);
+        await service.SaveAsync(manifest, path);
+
+        manifest = await checkpoints.BeginAttemptAsync(manifest, path);
+        manifest = await checkpoints.CompleteAsync(manifest, path, DeploymentStage.ValidateManifest, recoveryRequired: false);
+        manifest = await checkpoints.FailAsync(manifest, path, "test.failure", "Test failure", null, recoverable: true);
+        manifest = await checkpoints.BeginAttemptAsync(manifest, path);
+
+        Assert.Equal(2, manifest.State.AttemptNumber);
+        Assert.Contains(DeploymentStage.ValidateManifest, manifest.State.CompletedStages);
+        Assert.Equal(DeploymentStage.ValidateManifest, manifest.State.LastSuccessfulStage);
+        Assert.Null(manifest.State.LastError);
+    }
+
     private static PhysicalDiskSnapshot Snapshot(DeploymentManifest manifest) => new(
         manifest.TargetDisk,
         false,

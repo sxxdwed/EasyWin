@@ -79,6 +79,18 @@ public sealed class ManifestService(IJsonSerializer json, IHashService hashes) :
             throw new InvalidDataException("Manifest and plan identifiers are required.");
         }
 
+        if (manifest.State.AttemptNumber < 0 ||
+            manifest.State.CompletedStages.Distinct().Count() != manifest.State.CompletedStages.Count)
+        {
+            throw new InvalidDataException("Deployment state is invalid.");
+        }
+
+        if (manifest.State.LastSuccessfulStage.HasValue &&
+            !manifest.State.CompletedStages.Contains(manifest.State.LastSuccessfulStage.Value))
+        {
+            throw new InvalidDataException("The last successful stage is not present in completed stages.");
+        }
+
         _ = new Validation.DiskIdentityValidator().Validate(manifest.TargetDisk, manifest.TargetDisk) is { IsValid: true }
             ? true
             : throw new InvalidDataException("Target disk identity is incomplete.");
