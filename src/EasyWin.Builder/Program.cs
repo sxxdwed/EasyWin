@@ -1,0 +1,70 @@
+using EasyWin.Core.Models;
+using EasyWin.Core.Processes;
+using EasyWin.Core.Serialization;
+using EasyWin.Deployment.DryRun;
+using EasyWin.Deployment.Models;
+using EasyWin.Deployment.WinPe;
+
+return await MainAsync(args);
+
+static async Task<int> MainAsync(string[] args)
+{
+    try
+    {
+        if (Has(args, "--dry-run"))
+        {
+            string workspace = Value(args, "--workspace") ?? Path.Combine(Environment.CurrentDirectory, "artifacts", "dryrun");
+            string config = Value(args, "--config") ?? FindConfigRoot();
+            DryRunReport report = await new DryRunEngine().RunAsync(workspace, config).ConfigureAwait(false);
+            Console.WriteLine(report.Message);
+            Console.WriteLine($"Stages: {string.Join(" -> ", report.Stages)}");
+            Console.WriteLine($"Commands recorded: {report.RecordedCommands.Count}; executed: {report.DestructiveCommandsExecuted}");
+            Console.WriteLine($"Manifest: {report.ManifestPath}");
+            return report.Success && !report.DestructiveCommandsExecuted ? 0 : 2;
+        }
+
+        if (Has(args, "--build-winpe"))
+        {
+            string adk = Required(args, "--adk");
+            string payload = Required(args, "--payload");
+            string output = Required(args, "--output");
+            string work = Value(args, "--workspace") ?? Path.Combine(Path.GetTempPath(), $"EasyWin-WinPE-{Guid.NewGuid():N}");
+            var builder = new WinPeMediaBuilder(new ProcessRunner());
+            WinPeBuildResult result = await builder.BuildAsync(new WinPeBuildRequest(
+                adk, "amd64", work, output, payload,
+                ["WinPE-WMI", "WinPE-NetFX", "WinPE-Scripting", "WinPE-PowerShell", "WinPE-StorageWMI"], []), ExecutionMode.Live).ConfigureAwait(false);
+            Console.WriteLine($"WinPE: {result.MediaRoot}");
+            return 0;
+        }
+
+        Console.Error.WriteLine("Usage: EasyWin.Builder --dry-run [--workspace PATH] [--config PATH] | --build-winpe --adk PATH --payload PATH --output PATH");
+        return 64;
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Builder failed: {exception.Message}");
+        return 1;
+    }
+}
+
+static bool Has(string[] values, string name) => values.Any(value => value.Equals(name, StringComparison.OrdinalIgnoreCase));
+static string? Value(string[] values, string name)
+{
+    int index = Array.FindIndex(values, value => value.Equals(name, StringComparison.OrdinalIgnoreCase));
+    return index >= 0 && index + 1 < values.Length ? Path.GetFullPath(values[index + 1]) : null;
+}
+static string Required(string[] values, string name) => Value(values, name) ?? throw new ArgumentException($"Missing {name}.");
+static string FindConfigRoot()
+{
+    string current = Environment.CurrentDirectory;
+    for (int index = 0; index < 8; index++)
+    {
+        string candidate = Path.Combine(current, "config");
+        if (Directory.Exists(candidate)) return candidate;
+        DirectoryInfo? parent = Directory.GetParent(current);
+        if (parent is null) break;
+        current = parent.FullName;
+    }
+
+    throw new DirectoryNotFoundException("Could not locate the EasyWin config directory. Pass --config.");
+}

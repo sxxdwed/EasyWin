@@ -1,0 +1,22 @@
+{
+  "id": "lite",
+  "displayName": "Lite",
+  "description": "Безопасный облегчённый профиль: меньше рекомендаций, все механизмы обновления, защиты, Store и восстановления сохранены.",
+  "settings": {
+    "showFileExtensions": "true",
+    "showHiddenFiles": "false",
+    "taskbarAlignment": "left",
+    "disableConsumerSuggestions": "true",
+    "disableAdvertisingId": "true",
+    "disableTailoredExperiences": "true",
+    "disableWidgets": "true",
+    "disableChatAutoStart": "true",
+    "disableGameDvrBackgroundCapture": "true"
+  },
+  "defaultApplicationIds": [],
+  "preserveWindowsUpdate": true,
+  "preserveDefender": true,
+  "preserveMicrosoftStore": true,
+  "preserveRecovery": true,
+  "preserveServicingStack": true
+}

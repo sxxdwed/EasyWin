@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "packages": [
+    { "id": "sample-chipset", "name": "Пример драйвера чипсета", "category": "chipset", "infPath": "Drivers/Chipset/Example/example.inf", "sha256": "REQUIRED_BEFORE_SELECTION", "architecture": "x64", "hardwareIds": ["PCI\\VEN_0000&DEV_0000"], "compatibleIds": [] },
+    { "id": "sample-gpu", "name": "Пример драйвера GPU", "category": "gpu", "infPath": "Drivers/GPU/Example/example.inf", "sha256": "REQUIRED_BEFORE_SELECTION", "architecture": "x64", "hardwareIds": ["PCI\\VEN_0000&DEV_0001"], "compatibleIds": [] },
+    { "id": "sample-lan", "name": "Пример драйвера Ethernet", "category": "lan", "infPath": "Drivers/LAN/Example/example.inf", "sha256": "REQUIRED_BEFORE_SELECTION", "architecture": "x64", "hardwareIds": ["PCI\\VEN_0000&DEV_0002"], "compatibleIds": [] },
+    { "id": "sample-wifi", "name": "Пример драйвера Wi-Fi", "category": "wifi", "infPath": "Drivers/WiFi/Example/example.inf", "sha256": "REQUIRED_BEFORE_SELECTION", "architecture": "x64", "hardwareIds": ["PCI\\VEN_0000&DEV_0003"], "compatibleIds": [] },
+    { "id": "sample-audio", "name": "Пример аудиодрайвера", "category": "audio", "infPath": "Drivers/Audio/Example/example.inf", "sha256": "REQUIRED_BEFORE_SELECTION", "architecture": "x64", "hardwareIds": ["HDAUDIO\\FUNC_01&VEN_0000&DEV_0000"], "compatibleIds": [] }
+  ]
+}

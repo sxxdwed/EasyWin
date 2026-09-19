@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easywin.local/schemas/driver-catalog.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "packages"],
+  "properties": {
+    "version": { "const": 1 },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "category", "infPath", "sha256", "architecture", "hardwareIds", "compatibleIds"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+          "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "category": { "enum": ["chipset", "gpu", "lan", "wifi", "audio", "other"] },
+          "infPath": { "type": "string", "pattern": "^(?![A-Za-z]:|[/\\\\]|.*\\.\\.).+\\.inf$" },
+          "sha256": { "type": "string" },
+          "sizeBytes": { "type": "integer", "minimum": 0 },
+          "architecture": { "enum": ["x86", "x64", "arm64"] },
+          "hardwareIds": { "type": "array", "items": { "type": "string", "minLength": 3 }, "uniqueItems": true },
+          "compatibleIds": { "type": "array", "items": { "type": "string", "minLength": 3 }, "uniqueItems": true }
+        }
+      }
+    }
+  }
+}

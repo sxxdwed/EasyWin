@@ -1,0 +1,19 @@
+{
+  "id": "standard",
+  "displayName": "Standard",
+  "description": "Стандартная конфигурация Windows без удаления системных компонентов.",
+  "settings": {
+    "showFileExtensions": "true",
+    "showHiddenFiles": "false",
+    "taskbarAlignment": "center",
+    "disableConsumerSuggestions": "true",
+    "disableAdvertisingId": "true",
+    "disableTailoredExperiences": "true"
+  },
+  "defaultApplicationIds": [],
+  "preserveWindowsUpdate": true,
+  "preserveDefender": true,
+  "preserveMicrosoftStore": true,
+  "preserveRecovery": true,
+  "preserveServicingStack": true
+}
