@@ -11,7 +11,7 @@ using EasyWin.Deployment.Safety;
 
 namespace EasyWin.Deployment.PostInstall;
 
-public sealed class ApplicationInstaller(IProcessRunner runner, IHashService hashes)
+public sealed class ApplicationInstaller(IProcessRunner runner, IHashService hashes, IAuthenticodeVerifier? signatures = null)
 {
     public async Task<IReadOnlyList<AppInstallResult>> InstallAsync(
         IEnumerable<ApplicationPackage> applications,
@@ -47,6 +47,11 @@ public sealed class ApplicationInstaller(IProcessRunner runner, IHashService has
                 {
                     throw new InvalidDataException($"Application '{app.Name}' failed hash validation: {hash.Error}");
                 }
+                var provider = AppProviders.Find(app.Id) ?? throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackageSourceMissing"));
+                if (!string.Equals(app.ExpectedPublisher, provider.Publisher, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackagePublisherMismatch"));
+                InstallerFileValidation.ValidateExecutable(installer, provider.MaxBytes);
+                await (signatures ?? new AuthenticodeVerifier(runner)).VerifyAsync(installer, provider.Publisher, cancellationToken).ConfigureAwait(false);
             }
 
             var command = new CommandSpec(installer, app.Arguments, workingDirectory: Path.GetDirectoryName(installer), requiresElevation: true, timeout: TimeSpan.FromHours(1), acceptableExitCodes: app.SuccessExitCodes.ToHashSet());

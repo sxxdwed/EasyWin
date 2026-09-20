@@ -168,7 +168,7 @@
   <data name="RecoveryCancel" xml:space="preserve"><value>Cancel</value></data>
   <data name="RecoverySkippedErase" xml:space="preserve"><value>Additional disk was not erased: automatic erase is prohibited during recovery.</value></data>
   <data name="PackageSignatureInvalid" xml:space="preserve"><value>Installer signature is invalid or the publisher does not match.</value></data>
-  <data name="PackageSourceMissing" xml:space="preserve"><value>No verified official source is configured for this package.</value></data>
+  <data name="PackageSourceMissing" xml:space="preserve"><value>Verified official download source is not configured yet.</value></data>
   <data name="PackageDownloadInvalid" xml:space="preserve"><value>Download rejected: untrusted address, size or checksum.</value></data>
   <data name="PackageDownloadAvailable" xml:space="preserve"><value>Will download and verify before erase confirmation.</value></data>
   <data name="PackageReady" xml:space="preserve"><value>Ready: installer verified and saved.</value></data>
@@ -224,4 +224,11 @@
   <data name="DriverStorageCount" xml:space="preserve"><value>Verified storage drivers for WinPE: {0}.</value></data>
   <data name="DriverNetworkFound" xml:space="preserve"><value>Network driver found</value></data>
   <data name="DriverNetworkWarning" xml:space="preserve"><value>No exported network driver found. Networking after installation is not verified.</value></data>
+  <data name="PackagePublisherMismatch" xml:space="preserve"><value>Installer publisher does not match the verified official provider.</value></data>
+  <data name="PackageInternetRequired" xml:space="preserve"><value>Requires Internet after Windows installation.</value></data>
+  <data name="PackageVerified" xml:space="preserve"><value>Verified</value></data>
+  <data name="PackageDownloading" xml:space="preserve"><value>Downloading and verifying before confirmation…</value></data>
+  <data name="PackageDownloadFailed" xml:space="preserve"><value>Download failed</value></data>
+  <data name="PackageUnavailable" xml:space="preserve"><value>Unavailable</value></data>
+  <data name="PackageManifestMissing" xml:space="preserve"><value>Installer is missing from the validated staging manifest.</value></data>
 </root>

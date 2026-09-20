@@ -7,7 +7,16 @@ using EasyWin.Core.Security;
 
 namespace EasyWin.Deployment.PostInstall;
 
-public sealed record AppDownloadSource(Uri Url, string Publisher, IReadOnlySet<string> Hosts, long MaxBytes, string? ExpectedSha256 = null);
+public sealed record AppDownloadSource(Uri Url, string Publisher, IReadOnlySet<string> Hosts, long MaxBytes, string? ExpectedSha256 = null)
+{
+    public string AppId { get; init; } = "";
+    public string InstallerType { get; init; } = "exe";
+    public string Container { get; init; } = "exe";
+    public IReadOnlyList<string> Arguments { get; init; } = [];
+    public ProcessorArchitecture Architecture { get; init; } = ProcessorArchitecture.X64;
+    public bool RequiresInternet { get; init; }
+    public Uri? Referrer { get; init; }
+}
 
 public interface IAuthenticodeVerifier
 {
@@ -25,21 +34,17 @@ public sealed class AuthenticodeVerifier(IProcessRunner runner) : IAuthenticodeV
         if (!result.Succeeded || string.IsNullOrWhiteSpace(result.StandardOutput))
             throw new InvalidDataException(DeploymentStrings.Get("PackageSignatureInvalid") + "\n" + result.StandardError);
         using var json = JsonDocument.Parse(result.StandardOutput);
-        if (!result.Succeeded || json.RootElement.GetProperty("Status").GetInt32() != 0 ||
-            !string.Equals(json.RootElement.GetProperty("Publisher").GetString(), publisher, StringComparison.OrdinalIgnoreCase))
+        if (json.RootElement.GetProperty("Status").GetInt32() != 0)
             throw new InvalidDataException(DeploymentStrings.Get("PackageSignatureInvalid"));
+        if (!string.Equals(json.RootElement.GetProperty("Publisher").GetString(), publisher, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(DeploymentStrings.Get("PackagePublisherMismatch"));
     }
 }
 
 public sealed class VerifiedAppAcquisition(HttpClient http, IAuthenticodeVerifier signatures)
 {
     // Exact official download endpoints/redirect hosts, not arbitrary catalog-supplied mirrors.
-    public static AppDownloadSource? Source(string id) => id switch
-    {
-        "steam" => new(new("https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe"), "Valve Corp.", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "cdn.fastly.steamstatic.com" }, 64L << 20),
-        "discord" => new(new("https://discord.com/api/downloads/distributions/app/installers/latest?arch=x64&channel=stable&platform=win"), "Discord Inc.", new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "discord.com", "stable.dl2.discordapp.net", "dl.discordapp.net" }, 256L << 20),
-        _ => null,
-    };
+    public static AppDownloadSource? Source(string id) => AppProviders.Find(id);
 
     public static HttpClient CreateClient() => new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
 
@@ -59,7 +64,10 @@ public sealed class VerifiedAppAcquisition(HttpClient http, IAuthenticodeVerifie
                 for (int redirects = 0; ; redirects++)
                 {
                     ValidateAddress(address, source);
-                    using var response = await http.GetAsync(address, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                    using var request = new HttpRequestMessage(HttpMethod.Get, address);
+                    request.Headers.Referrer = source.Referrer;
+                    request.Headers.UserAgent.ParseAdd("EasyWin/1.4");
+                    using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                     // Also reject handlers that silently followed an untrusted redirect.
                     if (response.RequestMessage?.RequestUri is Uri actual) ValidateAddress(actual, source);
                     if ((int)response.StatusCode is >= 300 and < 400)
@@ -81,16 +89,23 @@ public sealed class VerifiedAppAcquisition(HttpClient http, IAuthenticodeVerifie
                             await output.WriteAsync(buffer.AsMemory(0, count), timeout.Token).ConfigureAwait(false);
                         }
                         if (bytes == 0) throw new InvalidDataException(DeploymentStrings.Get("PackageDownloadInvalid"));
+                        if (response.Content.Headers.ContentLength is long advertised && advertised != bytes)
+                            throw new InvalidDataException(DeploymentStrings.Get("PackageDownloadInvalid"));
                     }
                     break;
                 }
+                if (source.Container == "zip")
+                    await AppContainerPreparation.ExtractSingleExecutableAsync(temporary, source.MaxBytes, timeout.Token).ConfigureAwait(false);
+                InstallerFileValidation.ValidateExecutable(temporary, source.MaxBytes);
                 await signatures.VerifyAsync(temporary, source.Publisher, timeout.Token).ConfigureAwait(false);
                 string hash = await new Sha256HashService().ComputeSha256Async(temporary, timeout.Token).ConfigureAwait(false);
                 if (source.ExpectedSha256 is not null && !hash.Equals(source.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException(DeploymentStrings.Get("PackageDownloadInvalid"));
                 long length = new FileInfo(temporary).Length;
                 File.Move(temporary, destination, true);
-                return app with { Sha256 = hash, SizeBytes = length };
+                return app with { Sha256 = hash, SizeBytes = length, Arguments = source.Arguments,
+                    ExpectedPublisher = source.Publisher, RequiresInternet = source.RequiresInternet,
+                    SuccessExitCodes = app.Id == "nvidia-app" || app.Id == "amd-software" ? [0, 3010] : app.SuccessExitCodes };
             }
             catch (HttpRequestException) when (attempt < 2)
             { await Task.Delay(TimeSpan.FromSeconds(attempt + 1), token).ConfigureAwait(false); }

@@ -69,6 +69,7 @@ public sealed class ApplicationChoice(
     bool isSelected = false) : ObservableObject
 {
     private bool _isSelected = isSelected;
+    private string _availability = availabilityText;
 
     public event EventHandler? SelectionChanged;
 
@@ -77,7 +78,13 @@ public sealed class ApplicationChoice(
     public string Description => EasyWin.Core.Localization.DeploymentStrings.Translate(description);
     public string Category => string.IsNullOrEmpty(category) ? EasyWin.Core.Localization.DeploymentStrings.Get("CategoryGeneral") : EasyWin.Core.Localization.DeploymentStrings.Translate(category);
     public bool IsAvailable { get; } = isAvailable;
-    public string AvailabilityText => EasyWin.Core.Localization.DeploymentStrings.Translate(availabilityText);
+    public string AvailabilityText => EasyWin.Core.Localization.DeploymentStrings.Translate(_availability);
+    public void SetAvailability(string text)
+    {
+        _availability = text;
+        OnPropertyChanged(nameof(AvailabilityText));
+        OnPropertyChanged(nameof(Details));
+    }
     public string Details => string.IsNullOrWhiteSpace(AvailabilityText)
         ? Description
         : string.IsNullOrWhiteSpace(Description) ? AvailabilityText : $"{Description} · {AvailabilityText}";

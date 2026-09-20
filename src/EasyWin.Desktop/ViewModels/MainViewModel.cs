@@ -469,7 +469,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 check.Message = EasyWin.Core.Localization.DeploymentStrings.Get("Ui77");
             }
 
+            foreach (var app in Applications.Where(a => a.IsSelected))
+                app.SetAvailability(EasyWin.Core.Localization.DeploymentStrings.Get("PackageDownloading"));
             var results = await _workflow.PreflightAsync(request, cancellationToken).ConfigureAwait(true);
+            foreach (var app in Applications.Where(a => a.IsSelected))
+            {
+                var prepared = results.FirstOrDefault(r => r.Id == "app-" + app.Id);
+                app.SetAvailability(prepared?.Message ?? EasyWin.Core.Localization.DeploymentStrings.Get("PackageDownloadFailed"));
+            }
             foreach (var result in results)
             {
                 SetCheck(result.Id, result.Status, result.Message, result.Name, result.IsCritical);

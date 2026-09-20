@@ -34,7 +34,7 @@ public sealed record PreparedAppSet(string ConfigurationRoot, string PayloadRoot
     }
 }
 
-public sealed class PreparedApplications(VerifiedAppAcquisition downloads, IAuthenticodeVerifier signatures)
+public sealed class PreparedApplications(VerifiedAppAcquisition downloads, IAuthenticodeVerifier signatures, string? cacheRoot = null, EasyWin.Core.Processes.IProcessRunner? runner = null)
 {
     public async Task<PreparedAppSet> PrepareAsync(IReadOnlyList<string> selected, string configRoot, string sourcePayload, string work, CancellationToken token)
     {
@@ -57,29 +57,27 @@ public sealed class PreparedApplications(VerifiedAppAcquisition downloads, IAuth
             var app = catalog.Applications.Single(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
             if (VerifiedAppAcquisition.Source(app.Id) is not null)
             {
-                ready.Add(await downloads.AcquireAsync(app, payload, token).ConfigureAwait(false));
+                var downloadApp = app.Id == "directx" ? app with { Installer = "Apps/DirectX/directx_Jun2010_redist.exe" } : app;
+                var acquired = await new VerifiedAppCache(downloads, signatures).GetAsync(downloadApp, cacheRoot ?? VerifiedAppCache.DefaultRoot, payload, token).ConfigureAwait(false);
+                if (app.Id == "directx")
+                {
+                    string redist = PathValidator.ResolveUnderRoot(payload, acquired.Installer, true);
+                    string extract = Path.Combine(payload, "Apps", "DirectX", "Offline");
+                    Directory.CreateDirectory(extract);
+                    var process = await (runner ?? new EasyWin.Core.Processes.ProcessRunner()).RunAsync(new(redist, ["/Q", "/T:" + extract], timeout: TimeSpan.FromMinutes(3)), token).ConfigureAwait(false);
+                    if (!process.Succeeded) throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackageDownloadInvalid"));
+                    string setup = PathValidator.ResolveUnderRoot(payload, app.Installer, true);
+                    InstallerFileValidation.ValidateExecutable(setup, 128L << 20);
+                    await signatures.VerifyAsync(setup, acquired.ExpectedPublisher, token).ConfigureAwait(false);
+                    if (!Directory.EnumerateFiles(extract, "*.cab").Any())
+                        throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackageDownloadInvalid"));
+                    acquired = acquired with { Installer = app.Installer, SizeBytes = new FileInfo(setup).Length,
+                        Sha256 = await new Sha256HashService().ComputeSha256Async(setup, token).ConfigureAwait(false) };
+                }
+                ready.Add(acquired);
                 continue;
             }
-            string source = PathValidator.ResolveUnderRoot(sourcePayload, app.Installer, true);
-            string publisher = app.Id switch {
-                "chrome" => "Google LLC", "firefox" => "Mozilla Corporation", "vcredist" or "directx" => "Microsoft Corporation",
-                "nvidia-app" => "NVIDIA Corporation", "amd-software" => "Advanced Micro Devices, Inc.", "msi-center" => "MICRO-STAR INTERNATIONAL CO., LTD.",
-                _ => throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackageSourceMissing")) };
-            if (!(await new Sha256HashService().VerifyFileAsync(source, app.Sha256, app.SizeBytes, token).ConfigureAwait(false)).IsValid)
-                throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackageDownloadInvalid"));
-            await signatures.VerifyAsync(source, publisher, token).ConfigureAwait(false);
-            // Preserve companion files required by offline installers, confined to their package directory.
-            string sourceDirectory = Path.GetDirectoryName(source)!;
-            string targetDirectory = Path.GetDirectoryName(PathValidator.ResolveUnderRoot(payload, app.Installer))!;
-            foreach (string file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
-            {
-                string relative = Path.GetRelativePath(sourceDirectory, file);
-                _ = PathValidator.ResolveUnderRoot(sourceDirectory, relative, true);
-                string destination = PathValidator.ResolveUnderRoot(targetDirectory, relative);
-                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                File.Copy(file, destination);
-            }
-            ready.Add(app);
+            throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PackageSourceMissing"));
         }
         await json.SerializeToFileAsync(new ApplicationCatalog(catalog.Version, ready), Path.Combine(config, "apps", "catalog.json"), token).ConfigureAwait(false);
         var inventory = new List<ManifestFileEntry>();

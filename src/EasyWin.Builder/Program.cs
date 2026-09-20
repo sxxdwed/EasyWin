@@ -19,7 +19,7 @@ static async Task<int> MainAsync(string[] args)
             string workspace = Required(args, "--workspace");
             using var http = EasyWin.Deployment.PostInstall.VerifiedAppAcquisition.CreateClient();
             var signature = new EasyWin.Deployment.PostInstall.AuthenticodeVerifier(new ProcessRunner());
-            var result = await new EasyWin.Deployment.PostInstall.PreparedApplications(new(http, signature), signature).PrepareAsync(
+            var result = await new EasyWin.Deployment.PostInstall.PreparedApplications(new(http, signature), signature, Path.Combine(workspace, "Cache")).PrepareAsync(
                 selected, config, Path.GetDirectoryName(config)!, workspace, default).ConfigureAwait(false);
             foreach (var app in result.Applications) Console.WriteLine($"{app.Name}: {app.Sha256} ({app.SizeBytes})");
             Console.WriteLine(result.PayloadRoot);

@@ -168,7 +168,7 @@
   <data name="RecoveryCancel" xml:space="preserve"><value>Отмена</value></data>
   <data name="RecoverySkippedErase" xml:space="preserve"><value>Дополнительный диск не очищен: при восстановлении автоматическое стирание запрещено.</value></data>
   <data name="PackageSignatureInvalid" xml:space="preserve"><value>Подпись установщика недействительна или издатель не совпадает.</value></data>
-  <data name="PackageSourceMissing" xml:space="preserve"><value>Для пакета не настроен проверенный официальный источник.</value></data>
+  <data name="PackageSourceMissing" xml:space="preserve"><value>Официальный источник загрузки пока не настроен.</value></data>
   <data name="PackageDownloadInvalid" xml:space="preserve"><value>Загрузка отклонена: недоверенный адрес, размер или контрольная сумма.</value></data>
   <data name="PackageDownloadAvailable" xml:space="preserve"><value>Будет загружено и проверено до подтверждения очистки.</value></data>
   <data name="PackageReady" xml:space="preserve"><value>Готово: установщик проверен и сохранён.</value></data>
@@ -224,4 +224,11 @@
   <data name="DriverStorageCount" xml:space="preserve"><value>Проверенных драйверов хранения для WinPE: {0}.</value></data>
   <data name="DriverNetworkFound" xml:space="preserve"><value>Сетевой драйвер найден</value></data>
   <data name="DriverNetworkWarning" xml:space="preserve"><value>Экспортированный сетевой драйвер не найден. Сеть после установки не подтверждена.</value></data>
+  <data name="PackagePublisherMismatch" xml:space="preserve"><value>Издатель установщика не совпадает с проверенным официальным источником.</value></data>
+  <data name="PackageInternetRequired" xml:space="preserve"><value>После установки Windows потребуется интернет.</value></data>
+  <data name="PackageVerified" xml:space="preserve"><value>Проверено</value></data>
+  <data name="PackageDownloading" xml:space="preserve"><value>Загрузка и проверка до подтверждения…</value></data>
+  <data name="PackageDownloadFailed" xml:space="preserve"><value>Ошибка загрузки</value></data>
+  <data name="PackageUnavailable" xml:space="preserve"><value>Недоступно</value></data>
+  <data name="PackageManifestMissing" xml:space="preserve"><value>Установщик отсутствует в проверенном манифесте staging.</value></data>
 </root>

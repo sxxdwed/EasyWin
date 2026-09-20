@@ -89,12 +89,10 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             string availability = hardwareSpecific
                 ? compatible ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui104") : EasyWin.Core.Localization.DeploymentStrings.Get("Ui105")
                 : EasyWin.Core.Localization.DeploymentStrings.Get("Ui106");
-            bool present;
-            try { present = File.Exists(PathValidator.ResolveUnderRoot(ResolvePayloadRoot(configRoot), app.Installer)); }
-            catch (ArgumentException) { present = false; }
-            bool downloadable = VerifiedAppAcquisition.Source(app.Id) is not null;
-            if (!present) availability = EasyWin.Core.Localization.DeploymentStrings.Get(downloadable ? "PackageDownloadAvailable" : "Ui103");
-            return new ApplicationChoice(app.Id, app.Name, app.Description, app.Category, compatible && (present || downloadable), availability);
+            var provider = VerifiedAppAcquisition.Source(app.Id);
+            availability = EasyWin.Core.Localization.DeploymentStrings.Get(provider is null ? "PackageSourceMissing" : "PackageDownloadAvailable");
+            if (provider?.RequiresInternet == true) availability += " · " + EasyWin.Core.Localization.DeploymentStrings.Get("PackageInternetRequired");
+            return new ApplicationChoice(app.Id, app.Name, app.Description, app.Category, compatible && provider is not null, availability);
         }).ToArray();
         return new DesktopDiscovery(disks, profiles, applications, [EasyWin.Core.Localization.DeploymentStrings.Get("LanguageRussian"), EasyWin.Core.Localization.DeploymentStrings.Get("LanguageEnglish")]);
     }
@@ -237,7 +235,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         });
         if (payloadsValid && _preparedApps is not null)
             results.AddRange(_preparedApps.Applications.Select(app => new UiPreflightCheck("app-" + app.Id, app.Name,
-                EasyWin.Core.Localization.DeploymentStrings.Get("PackageReady"), true, UiCheckStatus.Pass)));
+                EasyWin.Core.Localization.DeploymentStrings.Get("PackageVerified") + (app.RequiresInternet ? " · " + EasyWin.Core.Localization.DeploymentStrings.Get("PackageInternetRequired") : ""), true, UiCheckStatus.Pass)));
         return results;
     }
 

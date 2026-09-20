@@ -23,7 +23,9 @@
           "sha256": { "type": "string" },
           "sizeBytes": { "type": ["integer", "null"], "minimum": 0 },
           "successExitCodes": { "type": "array", "minItems": 1, "items": { "type": "integer" }, "uniqueItems": true },
-          "requiresReboot": { "type": "boolean" }
+          "requiresReboot": { "type": "boolean" },
+          "expectedPublisher": { "type": "string" },
+          "requiresInternet": { "type": "boolean" }
         }
       }
     }

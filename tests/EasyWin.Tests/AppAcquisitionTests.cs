@@ -30,11 +30,12 @@ public sealed class AppAcquisitionTests
     public async Task Apps_SelectedPackageDownloadedBeforeConfirmation()
     {
         var signature = new Signature(true);
-        using var handler = new Handler(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2, 3]) });
+        byte[] executable = InstallerTestData.Executable();
+        using var handler = new Handler(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent(executable) });
         using var client = new HttpClient(handler);
         string root = TestData.NewDirectory();
         var package = await new VerifiedAppAcquisition(client, signature).AcquireAsync(App, root, default);
-        Assert.Equal(3, package.SizeBytes);
+        Assert.Equal(executable.Length, package.SizeBytes);
         Assert.Equal(64, package.Sha256.Length);
         Assert.Equal(1, signature.Calls);
         Assert.True(File.Exists(Path.Combine(root, App.Installer)));
@@ -43,7 +44,7 @@ public sealed class AppAcquisitionTests
     [Fact]
     public async Task Apps_InvalidSignature_FailsPreflight()
     {
-        using var handler = new Handler(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent([1]) });
+        using var handler = new Handler(_ => new(HttpStatusCode.OK) { Content = new ByteArrayContent(InstallerTestData.Executable()) });
         using var client = new HttpClient(handler); string root = TestData.NewDirectory();
         await Assert.ThrowsAsync<InvalidDataException>(() => new VerifiedAppAcquisition(client, new Signature(false)).AcquireAsync(App, root, default));
         Assert.Empty(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories));

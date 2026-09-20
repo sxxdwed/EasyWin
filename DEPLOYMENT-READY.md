@@ -1,4 +1,6 @@
-# EasyWin Beta 1 — 1.4.0-beta.1 — experimental readiness
+# EasyWin Beta 3 — 1.4.0-beta.3 — experimental readiness
+
+**Do not erase your main PC with this build. Real UEFI VM E2E: NOT RUN. Power loss during EFI recreation can leave the computer without a bootable recovery environment.** A successful test on one PC does not close the release validation gate. See [Beta 3 notes](docs/RELEASE-BETA-3.md).
 
 NOT production-validated. This beta contains additional recovery hardening after 1.3.0-beta.1. Automated validation does not establish real deployment safety. A complete real reboot/deployment/first-boot cycle remains unverified. Test in a disposable UEFI VM first; keep external backups and independent recovery media. See [validation gates](docs/VALIDATION-GATES.md) for outstanding work.
 

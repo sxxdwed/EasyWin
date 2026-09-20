@@ -97,6 +97,10 @@ public sealed record ApplicationPackage
 
     public bool RequiresReboot { get; init; }
 
+    public string ExpectedPublisher { get; init; } = string.Empty;
+
+    public bool RequiresInternet { get; init; }
+
     public IReadOnlyList<string> RequiredHardwareIdPrefixes { get; init; } = Array.Empty<string>();
 }
 

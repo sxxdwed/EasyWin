@@ -652,7 +652,8 @@ public sealed class PostInstallOrchestrator(
             if (manifest.ExecutionMode.IsDryRun()) stageRoot = manifest.StagingPartition.RootPath;
             else if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
                 stageRoot = PathValidator.ResolveUnderRoot(stageRoot, manifest.StagingPartition.FolderRelativePath, true);
-            await manifests.ValidateAsync(manifest, stageRoot, true, cancellationToken).ConfigureAwait(false);
+            await manifests.ValidateAsync(manifest, stageRoot, false, cancellationToken).ConfigureAwait(false);
+            await StagedApplicationGuard.ValidateCoreFilesAsync(manifest, stageRoot, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.ValidateManifest, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
 
             ApplicationCatalog appCatalog = await catalogs.LoadApplicationsAsync(Path.Combine(stageRoot, "Config", "apps", "catalog.json"), cancellationToken).ConfigureAwait(false);
@@ -684,6 +685,8 @@ public sealed class PostInstallOrchestrator(
                     manifest.State.FailedApplicationIds.Contains(app.Id, StringComparer.OrdinalIgnoreCase)) continue;
                 try
                 {
+                    if (!manifest.ExecutionMode.IsDryRun())
+                        await StagedApplicationGuard.ValidateAppAsync(manifest, app, stageRoot, cancellationToken).ConfigureAwait(false);
                     await apps.InstallAsync([app], stageRoot, manifest.ExecutionMode, hardware, cancellationToken).ConfigureAwait(false);
                     manifest = manifest with { State = manifest.State with { CompletedApplicationIds = manifest.State.CompletedApplicationIds.Append(app.Id).ToArray() } };
                 }

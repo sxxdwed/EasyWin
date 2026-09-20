@@ -1,8 +1,8 @@
-# EasyWin Beta 1 — 1.4.0-beta.1
+# EasyWin Beta 3 — 1.4.0-beta.3
 
 > BETA — experimental destructive deployment software. Automated tests and simulated deployment pass, but a complete real reboot/install/first-boot cycle has not been verified. Test first in a UEFI virtual machine with disposable disks. Do not use on your main PC without verified external backups and recovery media.
 
-Download [EasyWin Beta 1](https://github.com/sxxdwed/EasyWin/releases/tag/v1.4.0-beta.1). Read the [remaining validation gates](docs/VALIDATION-GATES.md) before testing. Older downloadable releases have been retired.
+Download [EasyWin Beta 3](https://github.com/sxxdwed/EasyWin/releases/tag/v1.4.0-beta.3). **Do not erase your main PC: real UEFI VM E2E is NOT RUN and EFI power-loss recovery is incomplete.** Read the [Beta 3 limitations](docs/RELEASE-BETA-3.md) and [remaining validation gates](docs/VALIDATION-GATES.md) before testing.
 
 ## Two-disk beta
 
