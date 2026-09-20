@@ -40,6 +40,7 @@ public sealed class DeploymentCheckpointService(IManifestService manifests)
             State = manifest.State with
             {
                 CurrentStage = stage,
+                StartedStages = manifest.State.StartedStages.Append(stage).Distinct().ToArray(),
                 RecoveryRequired = recoveryRequired,
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
                 LastError = null,

@@ -11,6 +11,20 @@ static async Task<int> MainAsync(string[] args)
 {
     try
     {
+        if (Has(args, "--acquire-apps"))
+        {
+            int idsAt = Array.FindIndex(args, value => value.Equals("--apps", StringComparison.OrdinalIgnoreCase));
+            string[] selected = idsAt >= 0 && idsAt + 1 < args.Length ? args[idsAt + 1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : [];
+            string config = Value(args, "--config") ?? FindConfigRoot();
+            string workspace = Required(args, "--workspace");
+            using var http = EasyWin.Deployment.PostInstall.VerifiedAppAcquisition.CreateClient();
+            var signature = new EasyWin.Deployment.PostInstall.AuthenticodeVerifier(new ProcessRunner());
+            var result = await new EasyWin.Deployment.PostInstall.PreparedApplications(new(http, signature), signature).PrepareAsync(
+                selected, config, Path.GetDirectoryName(config)!, workspace, default).ConfigureAwait(false);
+            foreach (var app in result.Applications) Console.WriteLine($"{app.Name}: {app.Sha256} ({app.SizeBytes})");
+            Console.WriteLine(result.PayloadRoot);
+            return 0;
+        }
         if (Has(args, "--dry-run"))
         {
             string workspace = Value(args, "--workspace") ?? Path.Combine(Environment.CurrentDirectory, "artifacts", "dryrun");

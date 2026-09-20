@@ -28,7 +28,7 @@ public sealed class WindowsImageService(IProcessRunner processRunner) : IWindows
         var editions = DismOutputParser.ParseImageInfo(result.StandardOutput, normalized).ToArray();
         for (var i = 0; i < editions.Length; i++)
         {
-            if (editions[i].Architecture != ProcessorArchitecture.Unknown)
+            if (editions[i].Architecture != ProcessorArchitecture.Unknown && !string.IsNullOrWhiteSpace(editions[i].Version))
             {
                 continue;
             }

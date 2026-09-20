@@ -216,7 +216,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref _selectedLanguage, value))
             {
-                Localization.LocalizedText.Instance.SetLanguage(value == "English" ? "en-US" : "ru-RU");
+                Localization.LocalizedText.Instance.SetLanguage(value == EasyWin.Core.Localization.DeploymentStrings.Get("LanguageEnglish") ? "en-US" : "ru-RU");
                 foreach (var item in Checks) item.RefreshLocalization();
                 foreach (var item in Stages) item.RefreshLocalization();
                 foreach (var item in Applications) item.RefreshLocalization();
@@ -335,7 +335,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 ?? Disks.FirstOrDefault(disk => disk.IsSystemDisk)
                 ?? Disks.FirstOrDefault();
             SelectedProfile = Profiles.FirstOrDefault(profile => profile.Id.Equals("standard", StringComparison.OrdinalIgnoreCase)) ?? Profiles.FirstOrDefault();
-            SelectedLanguage = Languages.FirstOrDefault(language => language.Equals("Русский", StringComparison.OrdinalIgnoreCase)) ?? Languages.FirstOrDefault();
+            SelectedLanguage = Languages.FirstOrDefault(language => language.Equals(EasyWin.Core.Localization.DeploymentStrings.Get("LanguageRussian"), StringComparison.OrdinalIgnoreCase)) ?? Languages.FirstOrDefault();
 
             UpdateDiscoveryChecks();
             string? defaultIso = ResolveDefaultIsoPath();

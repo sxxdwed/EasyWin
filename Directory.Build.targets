@@ -1,0 +1,14 @@
+<Project>
+  <Target Name="VerifyLocalizedEntryPoints" BeforeTargets="CoreCompile" Condition="'$(Configuration)' == 'Release' and '$(MSBuildProjectName)' == 'EasyWin.Core' and '$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell.exe -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File &quot;$(MSBuildThisFileDirectory)scripts\Verify-LocalizedEntryPoints.ps1&quot; -Root &quot;$(MSBuildThisFileDirectory).&quot;" />
+  </Target>
+  <Target Name="EasyWinBuildProvenance" BeforeTargets="GetAssemblyAttributes" DependsOnTargets="InitializeSourceControlInformation">
+    <PropertyGroup>
+      <EasyWinBuildUtc Condition="'$(EasyWinBuildUtc)' == ''">$([System.DateTime]::UtcNow.ToString('O'))</EasyWinBuildUtc>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyMetadata Include="GitCommit" Value="$(SourceRevisionId)" />
+      <AssemblyMetadata Include="BuildTimestampUtc" Value="$(EasyWinBuildUtc)" />
+    </ItemGroup>
+  </Target>
+</Project>

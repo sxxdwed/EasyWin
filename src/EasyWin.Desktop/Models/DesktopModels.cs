@@ -22,7 +22,7 @@ public sealed record DiskChoice(
     public string DisplayName => $"{Model}  ·  {FormatSize(SizeBytes)}  ·  {Serial}";
     public string ConfirmationText => $"ERASE {DeviceId}";
     public bool IsRecommendedTarget => StagingCapacityBytes >= 20L * 1024 * 1024 * 1024;
-    public string StagingCapacityText => $"безопасный резерв: {FormatSize(StagingCapacityBytes)}";
+    public string StagingCapacityText => EasyWin.Core.Localization.DeploymentStrings.Format("SafeReserve", FormatSize(StagingCapacityBytes));
 
     private static string FormatSize(long value)
     {
@@ -63,7 +63,7 @@ public sealed class ApplicationChoice(
     string id,
     string name,
     string description = "",
-    string category = "Общее",
+    string category = "",
     bool isAvailable = true,
     string availabilityText = "",
     bool isSelected = false) : ObservableObject
@@ -75,7 +75,7 @@ public sealed class ApplicationChoice(
     public string Id { get; } = id;
     public string Name { get; } = name;
     public string Description => EasyWin.Core.Localization.DeploymentStrings.Translate(description);
-    public string Category => EasyWin.Core.Localization.DeploymentStrings.Translate(category);
+    public string Category => string.IsNullOrEmpty(category) ? EasyWin.Core.Localization.DeploymentStrings.Get("CategoryGeneral") : EasyWin.Core.Localization.DeploymentStrings.Translate(category);
     public bool IsAvailable { get; } = isAvailable;
     public string AvailabilityText => EasyWin.Core.Localization.DeploymentStrings.Translate(availabilityText);
     public string Details => string.IsNullOrWhiteSpace(AvailabilityText)

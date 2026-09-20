@@ -1,4 +1,23 @@
-# EasyWin Beta 1 — recovery hardening
+# EasyWin Beta 2 — recovery hardening
+
+## Beta 2 follow-up work
+
+The current working tree adds opt-in checkpoint recovery with exact persisted partition GUID/type/geometry validation and no repeated erase; verified official Steam/Discord acquisition before confirmation; pre-confirmation driver export/signature checks; BCD capability probing on an exported store; conservative WinPE/DISM version and letter checks; localized entry-point strings/categories; release provenance/signing tooling; and a disposable VM lab/evidence harness.
+
+Real Steam/Discord downloads and Authenticode checks succeeded without executing installers. Unit tests and DryRun are separate evidence from that network test. No live driver export/signature validation, VM installation or signed release has been validated. The WinPE recovery menu uses keyboard choices; the Desktop recovery dialog and safe-cleanup workflow are still incomplete.
+
+**Critical:** checkpoints do not preserve bootability through EFI deletion. Power loss during EFI recreation can leave WinPE unreachable. See [VM protocol and remaining boot-handoff blocker](VM-E2E-PROTOCOL.md). Resume code alone does not close this P0 issue. Downloads currently cover Steam and Discord; other vendor providers and full service-layer RU/EN localization remain incomplete. The entry-point localization guard covers Cyrillic source text and literal exception sinks, not arbitrary whole-program English text/data flow. Full ADK/component version compatibility, VMD/inbox-driver coverage, actual live-BCD write permissions and atomic cleanup recovery need further validation.
+
+These changes belong to Beta 2; an existing installed Beta 1 executable is not updated automatically.
+
+Validation of the working tree on 2026-09-20 (repeat from the release tag before packaging):
+- Restore and Release solution build: PASS, zero warnings/errors.
+- Unit tests: 135/135 PASS, zero skipped; includes prepared app configuration mutation/addition/removal rejection.
+- Standalone DryRun: PASS, 49 recorded commands, none executed.
+- Real UEFI VM E2E: NOT RUN. Physical-PC testing readiness: NO.
+- Prepared app inventory now covers configuration and companion files, not only installer binaries. Work-volume free space is rechecked after acquisition/export against the full payload budget.
+
+## Published Beta 1 baseline (before the Beta 2 changes above)
 
 Still BETA — real end-to-end deployment not yet verified.
 

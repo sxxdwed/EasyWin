@@ -28,7 +28,8 @@ public sealed record DesktopPreparationRequest(
     string ConfigurationRoot,
     string WorkRoot,
     char StagingDriveLetter = 'T',
-    string? PayloadRoot = null);
+    string? PayloadRoot = null,
+    PreparedDrivers? Drivers = null);
 
 public sealed record DesktopPreparationResult(DeploymentManifest Manifest, string ManifestPath, IReadOnlyList<CommandSpec> PlannedCommands);
 
@@ -102,9 +103,11 @@ public sealed class DesktopPreparationOrchestrator(
         IReadOnlyList<string> exportedInfs = [];
         if (!request.Plan.ExecutionMode.IsDryRun() && request.Plan.DriverSelectionMode == DriverSelectionMode.Automatic)
         {
-            exportedDrivers = Path.Combine(work, "ExportedDrivers");
-            exportedInfs = await new DriverBackupService(runner).ExportAsync(exportedDrivers, cancellationToken).ConfigureAwait(false);
-            staticPayloadBytes = checked(staticPayloadBytes + DirectoryBytes(exportedDrivers));
+            if (request.Drivers is null) throw new DeploymentSafetyException("drivers.preflight.required", EasyWin.Core.Localization.DeploymentStrings.Get("DriverVerificationFailed"));
+            await request.Drivers.ValidateAsync(cancellationToken).ConfigureAwait(false);
+            exportedDrivers = request.Drivers.Root;
+            exportedInfs = request.Drivers.WinPeInfs;
+            staticPayloadBytes = checked(staticPayloadBytes + request.Drivers.Bytes);
         }
         WinPeBuildResult built = await winPe.BuildAsync(new WinPeBuildRequest(
             request.AdkWinPeRoot, "amd64", winPeWork, winPeOut, request.WinPePayloadRoot,
@@ -289,7 +292,13 @@ public sealed class WinPeDeploymentOrchestrator(
     DiskIdentityValidator identities,
     IProcessRunner runner)
 {
-    public async Task RunAsync(string manifestPath, IProgress<DeploymentProgress>? progress = null, CancellationToken cancellationToken = default)
+    public Task RunAsync(string manifestPath, IProgress<DeploymentProgress>? progress = null, CancellationToken cancellationToken = default)
+        => RunCoreAsync(manifestPath, progress, false, cancellationToken);
+
+    public Task ResumeAsync(string manifestPath, IProgress<DeploymentProgress>? progress = null, CancellationToken cancellationToken = default)
+        => RunCoreAsync(manifestPath, progress, true, cancellationToken);
+
+    private async Task RunCoreAsync(string manifestPath, IProgress<DeploymentProgress>? progress, bool resumeSafely, CancellationToken cancellationToken)
     {
         DeploymentManifest? manifest = null;
         var checkpoints = new DeploymentCheckpointService(manifests);
@@ -300,10 +309,8 @@ public sealed class WinPeDeploymentOrchestrator(
             EasyWin.Core.Localization.DeploymentStrings.SetLanguage(manifest.Language);
             // A reboot must never implicitly replay partition deletion or formatting.
             // Recovery of an interrupted destructive stage requires a separate verified plan.
-            if (manifest.State.DestructiveWorkStarted ||
-                manifest.State.CompletedStages.Any(stage => stage >= DeploymentStage.PrepareDisk && stage <= DeploymentStage.Completed) ||
-                manifest.State.CurrentStage is >= DeploymentStage.PrepareDisk and <= DeploymentStage.Completed ||
-                manifest.State.LastError?.Stage is >= DeploymentStage.PrepareDisk and <= DeploymentStage.Completed)
+            bool recovering = RecoveryPolicy.NeedsRecovery(manifest);
+            if (recovering && !resumeSafely)
             {
                 manifest = manifest with { State = manifest.State with { DestructiveWorkStarted = true } };
                 throw new DeploymentSafetyException("winpe.replay.blocked", "A destructive deployment was already started. Automatic replay is blocked; preserve deployment storage and use the recovery procedure.");
@@ -333,6 +340,7 @@ public sealed class WinPeDeploymentOrchestrator(
 
             var storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
             StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
+            RecoveryDecision? recovery = recovering ? RecoveryPolicy.Validate(manifest, disk, storage) : null;
             PartitionInfo stage = storage.Partitions.SingleOrDefault(partition => partition.GptPartitionId == manifest.StagingPartition.GptPartitionId)
                 ?? throw new DeploymentSafetyException("winpe.staging.missing", "Protected deployment partition is missing.");
             if (stage.OffsetBytes != manifest.StagingPartition.OffsetBytes || stage.SizeBytes != manifest.StagingPartition.SizeBytes)
@@ -381,7 +389,7 @@ public sealed class WinPeDeploymentOrchestrator(
                     throw new DeploymentSafetyException("winpe.image.invalid", "Staged Windows edition does not match the manifest.");
                 if (!string.Equals(Path.GetFullPath(stageRoot).TrimEnd('\\'), StagingSelection.Root(manifest.StagingPartition, stage).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                     throw new DeploymentSafetyException("winpe.staging.mapping", "Manifest is not on the validated staging volume.");
-                if (DriveInfo.GetDrives().Any(d => d.Name is "W:\\" or "S:\\" or "R:\\"))
+                if (!recovering && DriveInfo.GetDrives().Any(d => d.Name is "W:\\" or "S:\\" or "R:\\"))
                     throw new DeploymentSafetyException("winpe.letters", "Required W:, S: or R: drive letter is occupied.");
             }
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ValidateTargetDisk, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
@@ -391,6 +399,12 @@ public sealed class WinPeDeploymentOrchestrator(
             stage = StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
             await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
             new DeploymentSafetyValidator(identities).ValidateBeforeDestructive(manifest, disk, image, stagingDisk: storage);
+            if (recovering)
+            {
+                await MapRecoveryVolumesAsync(manifest, stageRoot, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
             var prepare = new DiskPreparationRequest(disk.Identity.DiskNumber, stage.GptPartitionId, stage.PartitionNumber, stage.OffsetBytes, stage.SizeBytes);
             progress?.Report(new DeploymentProgress(DeploymentStage.PrepareDisk, EasyWin.Core.Localization.DeploymentStrings.Get("StagePrepareDisk"), 52));
             manifest = manifest with { State = manifest.State with { DestructiveWorkStarted = true } };
@@ -399,22 +413,41 @@ public sealed class WinPeDeploymentOrchestrator(
                 await diskPart.PrepareSeparateTargetAsync(disk, storage, stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             else
                 await diskPart.ExecuteAsync(scripts.PrepareTargetPreservingDeployment(prepare, disk.Partitions), stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            if (!manifest.ExecutionMode.IsDryRun())
+            {
+                var prepared = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+                manifest = manifest with { State = manifest.State with { PreparedTargetLayout = RecoveryPolicy.Capture(manifest, prepared) } };
+            }
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
+            }
 
+            if (recovery?.ApplyImage != false)
+            {
             progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, EasyWin.Core.Localization.DeploymentStrings.Get("StageApplyImage"), 60));
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ApplyImage, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             disk = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
             storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
             StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
             await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+            if (recovering) RecoveryPolicy.Validate(manifest, disk, storage);
             if (!manifest.ExecutionMode.IsDryRun() && !disk.Partitions.Any(p => p.DriveLetter == "W" && p.FileSystem == "NTFS"))
                 throw new DeploymentSafetyException("apply.target.mapping", "W: does not resolve to the confirmed Windows target.");
             await images.ApplyAsync(new ApplyImageRequest(image, manifest.Image.ImageIndex, "W:\\"), new Progress<int>(percent => progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, EasyWin.Core.Localization.DeploymentStrings.Get("StageApplyImage") + $" {percent}%", 55 + percent * .25))), cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ApplyImage, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
+            }
             var stagedDrivers = manifest.FileInventory.Where(f => f.RelativePath.StartsWith("ExportedDrivers/", StringComparison.OrdinalIgnoreCase) && f.RelativePath.EndsWith(".inf", StringComparison.OrdinalIgnoreCase))
                 .Select(f => PathValidator.ResolveUnderRoot(stageRoot, f.RelativePath, true)).ToArray();
             if (stagedDrivers.Length > 0)
                 await images.AddDriversAsync(new DriverInjectionRequest("W:\\", stagedDrivers), cancellationToken).ConfigureAwait(false);
+            if (recovering)
+            {
+                disk = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+                storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+                RecoveryPolicy.Validate(manifest, disk, storage);
+                await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+                if (!manifest.ExecutionMode.IsDryRun() && !File.Exists("W:\\Windows\\System32\\ntoskrnl.exe"))
+                    throw new DeploymentSafetyException("recovery.windows.missing", EasyWin.Core.Localization.DeploymentStrings.Get("RecoveryUnsafe"));
+            }
             progress?.Report(new DeploymentProgress(DeploymentStage.ConfigureBoot, EasyWin.Core.Localization.DeploymentStrings.Get("StageConfigureBoot"), 82));
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ConfigureBoot, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             await bootFiles.ConfigureAsync(new BootFilesRequest("W:\\", "S:\\", Locale: manifest.Language), manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
@@ -425,6 +458,12 @@ public sealed class WinPeDeploymentOrchestrator(
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.GenerateUnattend, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             foreach (PhysicalDiskSnapshot additional in additionalDisks)
             {
+                if (recovering)
+                {
+                    if (!manifest.State.CompletedStages.Contains(DeploymentStage.PartitionDisk))
+                        manifest = manifest with { State = manifest.State with { OptionalWarnings = manifest.State.OptionalWarnings.Append(EasyWin.Core.Localization.DeploymentStrings.Get("RecoverySkippedErase")).ToArray() } };
+                    continue;
+                }
                 var freshAdditional = await StagingSelection.ResolveAsync(disks, additional.Identity, cancellationToken).ConfigureAwait(false);
                 StagingSelection.Writable(freshAdditional);
                 var freshTarget = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
@@ -482,6 +521,32 @@ public sealed class WinPeDeploymentOrchestrator(
             }
 
             throw;
+        }
+    }
+
+    private async Task MapRecoveryVolumesAsync(DeploymentManifest manifest, string work, CancellationToken token)
+    {
+        foreach (char letter in manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder ? new[] { 'S', 'W', 'R' } : new[] { 'S', 'W' })
+        {
+            var target = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, token).ConfigureAwait(false);
+            var storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, token).ConfigureAwait(false);
+            RecoveryPolicy.Validate(manifest, target, storage);
+            var partition = RecoveryPolicy.Mappings(manifest, target).Single(m => m.Letter == letter).Partition;
+            var all = await disks.GetDisksAsync(token).ConfigureAwait(false);
+            if (all.Any(d => d.Partitions.Any(p => string.Equals(p.DriveLetter, letter.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                (!StagingSelection.SameDisk(d.Identity, target.Identity) || p.GptPartitionId != partition.GptPartitionId))))
+                throw new DeploymentSafetyException("recovery.letter.collision", EasyWin.Core.Localization.DeploymentStrings.Get("RecoveryUnsafe"));
+            if (string.Equals(partition.DriveLetter, letter.ToString(), StringComparison.OrdinalIgnoreCase)) continue;
+            if (!manifest.ExecutionMode.IsDryRun() && DriveInfo.GetDrives().Any(d => d.Name.Equals($"{letter}:\\", StringComparison.OrdinalIgnoreCase)))
+                throw new DeploymentSafetyException("recovery.letter.collision", EasyWin.Core.Localization.DeploymentStrings.Get("RecoveryUnsafe"));
+            string remove = string.IsNullOrWhiteSpace(partition.DriveLetter) ? "" : $"remove letter={DeploymentGuard.DriveLetter(partition.DriveLetter[0])}\r\n";
+            await diskPart.ExecuteAsync($"select disk {DeploymentGuard.DiskNumber(target.Identity.DiskNumber)}\r\nselect partition {DeploymentGuard.PartitionNumber(partition.PartitionNumber)}\r\n{remove}assign letter={letter}\r\n", work, manifest.ExecutionMode, token).ConfigureAwait(false);
+            if (!manifest.ExecutionMode.IsDryRun())
+            {
+                var mapped = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, token).ConfigureAwait(false);
+                if (!mapped.Partitions.Any(p => p.GptPartitionId == partition.GptPartitionId && p.DriveLetter == letter.ToString()))
+                    throw new DeploymentSafetyException("recovery.letter.mapping", EasyWin.Core.Localization.DeploymentStrings.Get("RecoveryUnsafe"));
+            }
         }
     }
 

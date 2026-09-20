@@ -43,5 +43,9 @@ Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $bundl
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'SECURITY.md') -Destination $bundle -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'DEPLOYMENT-READY.md') -Destination $bundle -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs') -Destination $bundle -Recurse -Force
+# Example packages are retained in source for tests/documentation, never shipped as ready drivers.
+$publicDrivers = Join-Path $bundle 'config\drivers\catalog.json'
+@{ version = 1; packages = @() } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $publicDrivers -Encoding utf8
+Set-Content -LiteralPath (Join-Path $bundle 'BUILD-STATUS.txt') -Value 'Unsigned development build. Real VM E2E: NOT RUN.' -Encoding utf8
 
 Write-Host "EasyWin release bundle: $bundle"

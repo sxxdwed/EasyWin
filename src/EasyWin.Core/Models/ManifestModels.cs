@@ -57,6 +57,8 @@ public sealed record DeploymentState
 {
     public bool FirstBootValidated { get; init; }
     public bool DestructiveWorkStarted { get; init; }
+    public IReadOnlyList<PartitionInfo> PreparedTargetLayout { get; init; } = [];
+    public IReadOnlyList<DeploymentStage> StartedStages { get; init; } = [];
     public IReadOnlyList<string> OptionalWarnings { get; init; } = [];
     public IReadOnlyList<string> CompletedApplicationIds { get; init; } = [];
     public IReadOnlyList<string> FailedApplicationIds { get; init; } = [];

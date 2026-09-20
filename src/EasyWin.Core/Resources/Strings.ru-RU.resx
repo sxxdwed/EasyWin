@@ -161,4 +161,67 @@
   <data name="DependencyFound" xml:space="preserve"><value>Найден</value></data>
   <data name="DependencyMissing" xml:space="preserve"><value>Отсутствует</value></data>
   <data name="CopyError" xml:space="preserve"><value>Скопировать сведения об ошибке</value></data>
+  <data name="RecoveryUnsafe" xml:space="preserve"><value>Безопасное продолжение невозможно: контрольная точка или разметка диска не подтверждены. Не удаляйте deployment-хранилище.</value></data>
+  <data name="RecoveryDetected" xml:space="preserve"><value>Найдена незавершённая установка EasyWin</value></data>
+  <data name="RecoveryResume" xml:space="preserve"><value>Безопасно продолжить</value></data>
+  <data name="RecoveryDiagnostics" xml:space="preserve"><value>Диагностика</value></data>
+  <data name="RecoveryCancel" xml:space="preserve"><value>Отмена</value></data>
+  <data name="RecoverySkippedErase" xml:space="preserve"><value>Дополнительный диск не очищен: при восстановлении автоматическое стирание запрещено.</value></data>
+  <data name="PackageSignatureInvalid" xml:space="preserve"><value>Подпись установщика недействительна или издатель не совпадает.</value></data>
+  <data name="PackageSourceMissing" xml:space="preserve"><value>Для пакета не настроен проверенный официальный источник.</value></data>
+  <data name="PackageDownloadInvalid" xml:space="preserve"><value>Загрузка отклонена: недоверенный адрес, размер или контрольная сумма.</value></data>
+  <data name="PackageDownloadAvailable" xml:space="preserve"><value>Будет загружено и проверено до подтверждения очистки.</value></data>
+  <data name="PackageReady" xml:space="preserve"><value>Готово: установщик проверен и сохранён.</value></data>
+  <data name="DriveLetterCollision" xml:space="preserve"><value>Буквы S:, W:, R: или T: заняты. Освободите их перед подготовкой.</value></data>
+  <data name="ToolVersionsInvalid" xml:space="preserve"><value>Версии Windows, WinPE или DISM несовместимы либо не подтверждены.</value></data>
+  <data name="BcdProbeFailed" xml:space="preserve"><value>Не удалось проверить BCD на безопасной копии.</value></data>
+  <data name="DriveLetters" xml:space="preserve"><value>Свободные буквы дисков</value></data>
+  <data name="ToolVersions" xml:space="preserve"><value>Совместимость Windows / WinPE / DISM</value></data>
+  <data name="DriverVerificationFailed" xml:space="preserve"><value>Экспорт драйверов или проверка подписи не завершены.</value></data>
+  <data name="DriverSignToolMissing" xml:space="preserve"><value>Для проверки каталога драйверов нужен SignTool из Windows SDK (или путь EASYWIN_SIGNTOOL).</value></data>
+  <data name="DriverStorageMissing" xml:space="preserve"><value>Не найден проверенный драйвер контроллера хранения.</value></data>
+  <data name="DriverSignatureValid" xml:space="preserve"><value>Подписи экспортированных драйверов проверены</value></data>
+  <data name="DryRunCheck" xml:space="preserve"><value>DryRun: проверка смоделирована без системных изменений.</value></data>
+  <data name="PayloadsNotSelected" xml:space="preserve"><value>Профиль проверен; дополнительные пакеты не выбраны. Системные файлы будут хэшированы при staging.</value></data>
+  <data name="DryRunInputs" xml:space="preserve"><value>DryRun: входные данные проверены</value></data>
+  <data name="TargetIdentityMissing" xml:space="preserve"><value>Не удалось получить стабильную идентичность целевого диска.</value></data>
+  <data name="ImageChanged" xml:space="preserve"><value>ISO или выбранная редакция изменились после проверки. Повторно выберите образ.</value></data>
+  <data name="AdditionalIdentityMissing" xml:space="preserve"><value>Стабильная идентичность дополнительного диска потеряна.</value></data>
+  <data name="DeploymentPrepared" xml:space="preserve"><value>Deployment подготовлен; выполняется одноразовая загрузка WinPE.</value></data>
+  <data name="NoStageLetter" xml:space="preserve"><value>Нет свободной буквы диска для защищённого раздела EasyWin.</value></data>
+  <data name="PayloadRootMissing" xml:space="preserve"><value>Корень payload не найден.</value></data>
+  <data name="ImageEditionUnsupported" xml:space="preserve"><value>Выбранная редакция изменилась либо не поддерживает amd64.</value></data>
+  <data name="VolumeInaccessible" xml:space="preserve"><value>Выбранный том недоступен.</value></data>
+  <data name="WorkerPayloadMissing" xml:space="preserve"><value>Отсутствуют автономные WinPE/PostInstall. Подготовьте их до установки.</value></data>
+  <data name="ArchitectureUnknown" xml:space="preserve"><value>Неизвестная архитектура образа Windows.</value></data>
+  <data name="ConfigMissing" xml:space="preserve"><value>Папка конфигурации EasyWin не найдена.</value></data>
+  <data name="PlanIdMissing" xml:space="preserve"><value>В загрузочном образе отсутствует допустимый PlanId.</value></data>
+  <data name="ManifestAmbiguous" xml:space="preserve"><value>Текущий манифест EasyWin отсутствует либо найдено несколько совпадений.</value></data>
+  <data name="InitializeWinPe" xml:space="preserve"><value>Инициализация WinPE</value></data>
+  <data name="LanguageRussian" xml:space="preserve"><value>Русский</value></data>
+  <data name="LanguageEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="SafeReserve" xml:space="preserve"><value>безопасный резерв: {0}</value></data>
+  <data name="DataDiskSummary" xml:space="preserve"><value>ДАННЫЕ → {0}</value></data>
+  <data name="PackageCatalogMissing" xml:space="preserve"><value>Приложение '{0}' отсутствует в каталоге.</value></data>
+  <data name="PackageHashMissing" xml:space="preserve"><value>Для '{0}' не задан доверенный SHA-256.</value></data>
+  <data name="PackageHashesChecked" xml:space="preserve"><value>Проверены SHA-256 всех выбранных пакетов: {0}.</value></data>
+  <data name="CategoryGeneral" xml:space="preserve"><value>Общее</value></data>
+  <data name="CategoryEssentials" xml:space="preserve"><value>Основные</value></data>
+  <data name="CategoryGaming" xml:space="preserve"><value>Игры и общение</value></data>
+  <data name="CategoryComponents" xml:space="preserve"><value>Компоненты</value></data>
+  <data name="CategoryVendor" xml:space="preserve"><value>Фирменное ПО</value></data>
+  <data name="AppChromeDescription" xml:space="preserve"><value>Браузер Google.</value></data>
+  <data name="AppFirefoxDescription" xml:space="preserve"><value>Браузер Mozilla.</value></data>
+  <data name="AppSteamDescription" xml:space="preserve"><value>Игровой клиент Steam.</value></data>
+  <data name="AppDiscordDescription" xml:space="preserve"><value>Клиент Discord.</value></data>
+  <data name="App7ZipDescription" xml:space="preserve"><value>Архиватор 7-Zip.</value></data>
+  <data name="AppVCRDescription" xml:space="preserve"><value>Библиотеки Visual C++ для игр и программ.</value></data>
+  <data name="AppDXDescription" xml:space="preserve"><value>Старые библиотеки DirectX, необходимые некоторым играм.</value></data>
+  <data name="AppNvidiaDescription" xml:space="preserve"><value>Обновление драйверов, настройки игр, запись и оверлей NVIDIA.</value></data>
+  <data name="AppAmdDescription" xml:space="preserve"><value>Официальное автоопределение AMD; после загрузки Windows скачает подходящий пакет из интернета.</value></data>
+  <data name="AppMsiDescription" xml:space="preserve"><value>Управление и мониторинг совместимого оборудования MSI.</value></data>
+  <data name="DriverStorageFound" xml:space="preserve"><value>Драйвер контроллера хранения</value></data>
+  <data name="DriverStorageCount" xml:space="preserve"><value>Проверенных драйверов хранения для WinPE: {0}.</value></data>
+  <data name="DriverNetworkFound" xml:space="preserve"><value>Сетевой драйвер найден</value></data>
+  <data name="DriverNetworkWarning" xml:space="preserve"><value>Экспортированный сетевой драйвер не найден. Сеть после установки не подтверждена.</value></data>
 </root>

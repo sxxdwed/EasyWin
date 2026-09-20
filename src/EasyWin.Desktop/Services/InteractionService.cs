@@ -25,7 +25,7 @@ public sealed class InteractionService : IInteractionService
     {
         DiskChoice[] disks = [targetDisk, .. additionalDisksToErase];
         string display = string.Join("\n", disks.Select((disk, index) =>
-            index == 0 ? $"WINDOWS → {disk.DisplayName}" : $"ДАННЫЕ → {disk.DisplayName}"));
+            index == 0 ? $"WINDOWS → {disk.DisplayName}" : EasyWin.Core.Localization.DeploymentStrings.Format("DataDiskSummary", disk.DisplayName)));
         string details = string.Join("\n", disks.Select(disk =>
             $"{disk.DeviceId}  |  Serial: {disk.Serial}  |  Bus: {disk.BusType}"));
         string requiredText = "ERASE " + string.Join(" + ", disks.Select(static disk => disk.DeviceId));

@@ -161,4 +161,67 @@
   <data name="DependencyFound" xml:space="preserve"><value>Found</value></data>
   <data name="DependencyMissing" xml:space="preserve"><value>Missing</value></data>
   <data name="CopyError" xml:space="preserve"><value>Copy diagnostic details</value></data>
+  <data name="RecoveryUnsafe" xml:space="preserve"><value>Safe recovery is unavailable: checkpoint or target layout could not be verified. Preserve deployment storage.</value></data>
+  <data name="RecoveryDetected" xml:space="preserve"><value>An incomplete EasyWin deployment was detected</value></data>
+  <data name="RecoveryResume" xml:space="preserve"><value>Resume safely</value></data>
+  <data name="RecoveryDiagnostics" xml:space="preserve"><value>Diagnostics</value></data>
+  <data name="RecoveryCancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="RecoverySkippedErase" xml:space="preserve"><value>Additional disk was not erased: automatic erase is prohibited during recovery.</value></data>
+  <data name="PackageSignatureInvalid" xml:space="preserve"><value>Installer signature is invalid or the publisher does not match.</value></data>
+  <data name="PackageSourceMissing" xml:space="preserve"><value>No verified official source is configured for this package.</value></data>
+  <data name="PackageDownloadInvalid" xml:space="preserve"><value>Download rejected: untrusted address, size or checksum.</value></data>
+  <data name="PackageDownloadAvailable" xml:space="preserve"><value>Will download and verify before erase confirmation.</value></data>
+  <data name="PackageReady" xml:space="preserve"><value>Ready: installer verified and saved.</value></data>
+  <data name="DriveLetterCollision" xml:space="preserve"><value>S:, W:, R: or T: is occupied. Free the required letters before preparation.</value></data>
+  <data name="ToolVersionsInvalid" xml:space="preserve"><value>Windows, WinPE or DISM versions are incompatible or unverified.</value></data>
+  <data name="BcdProbeFailed" xml:space="preserve"><value>BCD capability check on an isolated copy failed.</value></data>
+  <data name="DriveLetters" xml:space="preserve"><value>Available drive letters</value></data>
+  <data name="ToolVersions" xml:space="preserve"><value>Windows / WinPE / DISM compatibility</value></data>
+  <data name="DriverVerificationFailed" xml:space="preserve"><value>Driver export or signature verification is incomplete.</value></data>
+  <data name="DriverSignToolMissing" xml:space="preserve"><value>Driver catalog verification requires Windows SDK SignTool (or EASYWIN_SIGNTOOL path).</value></data>
+  <data name="DriverStorageMissing" xml:space="preserve"><value>No verified storage controller driver was found.</value></data>
+  <data name="DriverSignatureValid" xml:space="preserve"><value>Exported driver signatures verified</value></data>
+  <data name="DryRunCheck" xml:space="preserve"><value>DryRun: simulated check without system changes.</value></data>
+  <data name="PayloadsNotSelected" xml:space="preserve"><value>Profile validated; no optional packages selected. System files will be hashed during staging.</value></data>
+  <data name="DryRunInputs" xml:space="preserve"><value>DryRun: input validated</value></data>
+  <data name="TargetIdentityMissing" xml:space="preserve"><value>The stable target disk identity is unavailable.</value></data>
+  <data name="ImageChanged" xml:space="preserve"><value>The ISO or selected edition changed after validation. Select the image again.</value></data>
+  <data name="AdditionalIdentityMissing" xml:space="preserve"><value>The additional disk stable identity is unavailable.</value></data>
+  <data name="DeploymentPrepared" xml:space="preserve"><value>Deployment prepared; starting the one-time WinPE boot.</value></data>
+  <data name="NoStageLetter" xml:space="preserve"><value>No free drive letter for protected EasyWin storage.</value></data>
+  <data name="PayloadRootMissing" xml:space="preserve"><value>Package payload root was not found.</value></data>
+  <data name="ImageEditionUnsupported" xml:space="preserve"><value>Selected image edition changed or is not supported amd64.</value></data>
+  <data name="VolumeInaccessible" xml:space="preserve"><value>Selected volume is inaccessible.</value></data>
+  <data name="WorkerPayloadMissing" xml:space="preserve"><value>Self-contained WinPE/PostInstall payloads are missing. Publish them with the supplied profiles before a real run.</value></data>
+  <data name="ArchitectureUnknown" xml:space="preserve"><value>Unknown Windows image architecture.</value></data>
+  <data name="ConfigMissing" xml:space="preserve"><value>EasyWin config directory was not found.</value></data>
+  <data name="PlanIdMissing" xml:space="preserve"><value>The boot image has no valid deployment PlanId.</value></data>
+  <data name="ManifestAmbiguous" xml:space="preserve"><value>Current EasyWin deployment manifest is missing or ambiguous.</value></data>
+  <data name="InitializeWinPe" xml:space="preserve"><value>Initialize WinPE</value></data>
+  <data name="LanguageRussian" xml:space="preserve"><value>Русский</value></data>
+  <data name="LanguageEnglish" xml:space="preserve"><value>English</value></data>
+  <data name="SafeReserve" xml:space="preserve"><value>safe reserve: {0}</value></data>
+  <data name="DataDiskSummary" xml:space="preserve"><value>DATA → {0}</value></data>
+  <data name="PackageCatalogMissing" xml:space="preserve"><value>Application '{0}' is missing from the catalog.</value></data>
+  <data name="PackageHashMissing" xml:space="preserve"><value>No trusted SHA-256 is configured for '{0}'.</value></data>
+  <data name="PackageHashesChecked" xml:space="preserve"><value>SHA-256 verified for all selected packages: {0}.</value></data>
+  <data name="CategoryGeneral" xml:space="preserve"><value>General</value></data>
+  <data name="CategoryEssentials" xml:space="preserve"><value>Essentials</value></data>
+  <data name="CategoryGaming" xml:space="preserve"><value>Games and communication</value></data>
+  <data name="CategoryComponents" xml:space="preserve"><value>Components</value></data>
+  <data name="CategoryVendor" xml:space="preserve"><value>Vendor software</value></data>
+  <data name="AppChromeDescription" xml:space="preserve"><value>Google browser.</value></data>
+  <data name="AppFirefoxDescription" xml:space="preserve"><value>Mozilla browser.</value></data>
+  <data name="AppSteamDescription" xml:space="preserve"><value>Steam game client.</value></data>
+  <data name="AppDiscordDescription" xml:space="preserve"><value>Discord client.</value></data>
+  <data name="App7ZipDescription" xml:space="preserve"><value>7-Zip archiver.</value></data>
+  <data name="AppVCRDescription" xml:space="preserve"><value>Visual C++ libraries for games and applications.</value></data>
+  <data name="AppDXDescription" xml:space="preserve"><value>Legacy DirectX libraries required by some games.</value></data>
+  <data name="AppNvidiaDescription" xml:space="preserve"><value>Driver updates, game settings, recording and NVIDIA overlay.</value></data>
+  <data name="AppAmdDescription" xml:space="preserve"><value>Official AMD auto-detection; downloads the matching package from the Internet after Windows boots.</value></data>
+  <data name="AppMsiDescription" xml:space="preserve"><value>Management and monitoring of compatible MSI hardware.</value></data>
+  <data name="DriverStorageFound" xml:space="preserve"><value>Storage controller driver</value></data>
+  <data name="DriverStorageCount" xml:space="preserve"><value>Verified storage drivers for WinPE: {0}.</value></data>
+  <data name="DriverNetworkFound" xml:space="preserve"><value>Network driver found</value></data>
+  <data name="DriverNetworkWarning" xml:space="preserve"><value>No exported network driver found. Networking after installation is not verified.</value></data>
 </root>

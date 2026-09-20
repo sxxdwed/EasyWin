@@ -167,6 +167,65 @@ public sealed class TwoDiskTests
     }
     private static ManifestService Manifests() => new(new SystemTextJsonSerializer(), new Sha256HashService());
 
+    private static PhysicalDiskSnapshot PreparedTarget(PhysicalDiskSnapshot disk) => disk with { Partitions = [
+        new() { GptPartitionId = Guid.NewGuid(), GptTypeId = RecoveryPolicy.EfiType, PartitionNumber = 1, OffsetBytes = 1L << 20, SizeBytes = 260L << 20, FileSystem = "FAT32", DriveLetter = "S" },
+        new() { GptPartitionId = Guid.NewGuid(), GptTypeId = RecoveryPolicy.MsrType, PartitionNumber = 2, OffsetBytes = 261L << 20, SizeBytes = 16L << 20 },
+        new() { GptPartitionId = Guid.NewGuid(), GptTypeId = RecoveryPolicy.DataType, PartitionNumber = 3, OffsetBytes = 277L << 20, SizeBytes = 100L << 30, FileSystem = "NTFS", DriveLetter = "W" },
+        new() { GptPartitionId = Guid.NewGuid(), GptTypeId = RecoveryPolicy.RecoveryType, PartitionNumber = 4, OffsetBytes = (100L << 30) + (277L << 20), SizeBytes = 1L << 30, FileSystem = "NTFS", DriveLetter = "R" },
+    ] };
+
+    [Fact]
+    public Task Recovery_AfterPrepareDisk_DoesNotCleanAgain() => CheckRecovery(false);
+    [Fact]
+    public Task Recovery_AfterPrepareDisk_ResumesApplyImage() => CheckRecovery(false);
+    [Fact]
+    public Task Recovery_AfterApplyImage_ResumesConfigureBoot() => CheckRecovery(true);
+
+    private static async Task CheckRecovery(bool applied)
+    {
+        var (m, root, target, storage) = await Manifest();
+        target = PreparedTarget(target);
+        m = m with { State = new() { DestructiveWorkStarted = true, PreparedTargetLayout = target.Partitions,
+            CompletedStages = applied ? [DeploymentStage.PrepareDisk, DeploymentStage.ApplyImage] : [DeploymentStage.PrepareDisk] } };
+        var runner = new RecordingProcessRunner(); var diskPart = new DiskPartService(runner);
+        var manifests = Manifests(); string path = Path.Combine(root, "manifest.json");
+        await manifests.SaveAsync(m, path);
+        var orchestrator = new WinPeDeploymentOrchestrator(manifests, new Disks(target, storage), diskPart, new(),
+            new WindowsImageService(runner), new BootFilesService(runner), new UnattendGenerator(), new(), runner);
+        await orchestrator.ResumeAsync(path);
+        Assert.DoesNotContain(diskPart.PlannedScripts, script => script.Contains("clean", StringComparison.OrdinalIgnoreCase) || script.Contains("format", StringComparison.OrdinalIgnoreCase) || script.Contains("delete partition", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(!applied, runner.Commands.Any(command => command.Arguments.Contains("/Apply-Image")));
+        Assert.Contains(runner.Commands, command => command.FileName == "bcdboot.exe");
+        var completed = await manifests.LoadAndValidateAsync(path);
+        Assert.Contains(DeploymentStage.AwaitingFirstBoot, completed.State.CompletedStages);
+    }
+
+    [Theory]
+    [InlineData("unfinished")]
+    [InlineData("geometry")]
+    [InlineData("guid")]
+    [InlineData("identity")]
+    [InlineData("missing-snapshot")]
+    public async Task Recovery_UnsafeState_FailsClosed(string failure)
+    {
+        var (m, root, target, storage) = await Manifest();
+        target = PreparedTarget(target);
+        m = m with { State = new() { DestructiveWorkStarted = true, PreparedTargetLayout = target.Partitions, CompletedStages = [DeploymentStage.PrepareDisk] } };
+        if (failure == "unfinished") m = m with { State = m.State with { CompletedStages = [] } };
+        if (failure == "missing-snapshot") m = m with { State = m.State with { PreparedTargetLayout = [] } };
+        if (failure == "geometry") target = target with { Partitions = target.Partitions.Select(p => p.DriveLetter == "W" ? p with { SizeBytes = p.SizeBytes - 1048576 } : p).ToArray() };
+        if (failure == "guid") target = target with { Partitions = target.Partitions.Select(p => p.DriveLetter == "W" ? p with { GptPartitionId = Guid.NewGuid() } : p).ToArray() };
+        if (failure == "identity") target = target with { Identity = target.Identity with { SerialNumber = "changed" } };
+        var runner = new RecordingProcessRunner(); var diskPart = new DiskPartService(runner);
+        var manifests = Manifests(); string path = Path.Combine(root, "manifest.json");
+        await manifests.SaveAsync(m, path);
+        var orchestrator = new WinPeDeploymentOrchestrator(manifests, new Disks(target, storage), diskPart, new(),
+            new WindowsImageService(runner), new BootFilesService(runner), new UnattendGenerator(), new(), runner);
+        await Assert.ThrowsAsync<DeploymentSafetyException>(() => orchestrator.ResumeAsync(path));
+        Assert.Empty(diskPart.PlannedScripts);
+        Assert.Empty(runner.Commands);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]

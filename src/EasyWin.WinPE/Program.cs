@@ -10,6 +10,7 @@ using EasyWin.Deployment.Configuration;
 using EasyWin.Deployment.Disks;
 using EasyWin.Deployment.Images;
 using EasyWin.Deployment.Orchestration;
+using EasyWin.Core.Localization;
 
 return await MainAsync(args);
 
@@ -19,7 +20,7 @@ static async Task<int> MainAsync(string[] args)
     try
     {
         var initialized = await new ProcessRunner().RunAsync(new CommandSpec("wpeinit.exe", [], requiresElevation: true)).ConfigureAwait(false);
-        CommandFailureException.ThrowIfFailed("Initialize WinPE", initialized);
+        CommandFailureException.ThrowIfFailed(EasyWin.Core.Localization.DeploymentStrings.Get("InitializeWinPe"), initialized);
         string manifestPath = ResolveManifest(args);
         logPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "Logs", "boot.log");
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
@@ -27,8 +28,26 @@ static async Task<int> MainAsync(string[] args)
         using var structuredLogger = new DeploymentFileLogger(Path.Combine(Path.GetDirectoryName(manifestPath)!, "Logs"));
         var runner = new LoggingProcessRunner(new ProcessRunner(), structuredLogger);
         var disks = new PhysicalDiskService(runner);
+        var manifestService = new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService());
+        var candidate = await manifestService.LoadAndValidateAsync(manifestPath, true).ConfigureAwait(false);
+        DeploymentStrings.SetLanguage(candidate.Language);
+        bool resume = false;
+        if (RecoveryPolicy.NeedsRecovery(candidate))
+        {
+            Console.WriteLine(DeploymentStrings.Get("RecoveryDetected"));
+            if (Console.IsInputRedirected) return 2;
+            while (true)
+            {
+                Console.WriteLine($"1. {DeploymentStrings.Get("RecoveryResume")}\n2. {DeploymentStrings.Get("RecoveryDiagnostics")}\n3. {DeploymentStrings.Get("RecoveryCancel")}");
+                string? choice = Console.ReadLine();
+                if (choice == "1") { resume = true; break; }
+                if (choice != "2") return 2;
+                Console.WriteLine($"PlanId: {candidate.PlanId}\nCheckpoint: {candidate.State.CurrentStage}\nLast successful: {candidate.State.LastSuccessfulStage}\n{logPath}");
+                Console.WriteLine(DeploymentStrings.Get("RecoveryUnsafe"));
+            }
+        }
         var orchestrator = new WinPeDeploymentOrchestrator(
-            new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService()),
+            manifestService,
             disks,
             new DiskPartService(runner),
             new DiskPartScriptBuilder(),
@@ -43,7 +62,8 @@ static async Task<int> MainAsync(string[] args)
             Console.WriteLine(line);
             File.AppendAllText(logPath, line + Environment.NewLine);
         });
-        await orchestrator.RunAsync(manifestPath, progress).ConfigureAwait(false);
+        if (resume) await orchestrator.ResumeAsync(manifestPath, progress).ConfigureAwait(false);
+        else await orchestrator.RunAsync(manifestPath, progress).ConfigureAwait(false);
         return 0;
     }
     catch (Exception exception)
@@ -59,7 +79,7 @@ static string ResolveManifest(string[] values)
 {
     string planFile = Path.Combine(AppContext.BaseDirectory, "plan-id.txt");
     if (!File.Exists(planFile) || !Guid.TryParse(File.ReadAllText(planFile).Trim(), out Guid expectedPlan))
-        throw new InvalidDataException("The boot image has no valid deployment PlanId.");
+        throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("PlanIdMissing"));
     int index = Array.FindIndex(values, value => value.Equals("--manifest", StringComparison.OrdinalIgnoreCase));
     var candidates = new List<string>();
     if (index >= 0 && index + 1 < values.Length && File.Exists(values[index + 1])) candidates.Add(Path.GetFullPath(values[index + 1]));
@@ -89,5 +109,5 @@ static string ResolveManifest(string[] values)
         var manifest = new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService()).LoadAndValidateAsync(path, false).GetAwaiter().GetResult();
         if (manifest.PlanId == expectedPlan) matching.Add(path);
     }
-    return matching.Count == 1 ? matching[0] : throw new InvalidDataException("Current EasyWin deployment manifest is missing or ambiguous.");
+    return matching.Count == 1 ? matching[0] : throw new InvalidDataException(EasyWin.Core.Localization.DeploymentStrings.Get("ManifestAmbiguous"));
 }
