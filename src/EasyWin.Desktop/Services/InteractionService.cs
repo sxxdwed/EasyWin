@@ -11,8 +11,8 @@ public sealed class InteractionService : IInteractionService
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Выберите официальный ISO Windows",
-            Filter = "Образ Windows (*.iso)|*.iso",
+            Title = EasyWin.Core.Localization.DeploymentStrings.Get("Ui94"),
+            Filter = EasyWin.Core.Localization.DeploymentStrings.Get("Ui95"),
             CheckFileExists = true,
             CheckPathExists = true,
             Multiselect = false

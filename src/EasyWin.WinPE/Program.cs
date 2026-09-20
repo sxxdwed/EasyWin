@@ -5,6 +5,7 @@ using EasyWin.Core.Security;
 using EasyWin.Core.Serialization;
 using EasyWin.Core.Validation;
 using EasyWin.Deployment.Boot;
+using EasyWin.Deployment.Commands;
 using EasyWin.Deployment.Configuration;
 using EasyWin.Deployment.Disks;
 using EasyWin.Deployment.Images;
@@ -17,7 +18,10 @@ static async Task<int> MainAsync(string[] args)
     string logPath = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? "X:\\", "EasyWin", "boot.log");
     try
     {
+        var initialized = await new ProcessRunner().RunAsync(new CommandSpec("wpeinit.exe", [], requiresElevation: true)).ConfigureAwait(false);
+        CommandFailureException.ThrowIfFailed("Initialize WinPE", initialized);
         string manifestPath = ResolveManifest(args);
+        logPath = Path.Combine(Path.GetDirectoryName(manifestPath)!, "Logs", "boot.log");
         Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
         await File.AppendAllTextAsync(logPath, $"{DateTimeOffset.UtcNow:O} WinPE started; manifest={manifestPath}{Environment.NewLine}").ConfigureAwait(false);
         using var structuredLogger = new DeploymentFileLogger(Path.Combine(Path.GetDirectoryName(manifestPath)!, "Logs"));
@@ -53,9 +57,12 @@ static async Task<int> MainAsync(string[] args)
 
 static string ResolveManifest(string[] values)
 {
+    string planFile = Path.Combine(AppContext.BaseDirectory, "plan-id.txt");
+    if (!File.Exists(planFile) || !Guid.TryParse(File.ReadAllText(planFile).Trim(), out Guid expectedPlan))
+        throw new InvalidDataException("The boot image has no valid deployment PlanId.");
     int index = Array.FindIndex(values, value => value.Equals("--manifest", StringComparison.OrdinalIgnoreCase));
-    if (index >= 0 && index + 1 < values.Length && File.Exists(values[index + 1])) return Path.GetFullPath(values[index + 1]);
     var candidates = new List<string>();
+    if (index >= 0 && index + 1 < values.Length && File.Exists(values[index + 1])) candidates.Add(Path.GetFullPath(values[index + 1]));
     foreach (DriveInfo drive in DriveInfo.GetDrives().Where(static drive => drive.IsReady))
     {
         try
@@ -76,5 +83,11 @@ static string ResolveManifest(string[] values)
         }
     }
 
-    return candidates.Count == 1 ? candidates[0] : throw new InvalidDataException("EasyWin deployment manifest is missing or ambiguous.");
+    var matching = new List<string>();
+    foreach (string path in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+    {
+        var manifest = new ManifestService(new SystemTextJsonSerializer(), new Sha256HashService()).LoadAndValidateAsync(path, false).GetAwaiter().GetResult();
+        if (manifest.PlanId == expectedPlan) matching.Add(path);
+    }
+    return matching.Count == 1 ? matching[0] : throw new InvalidDataException("Current EasyWin deployment manifest is missing or ambiguous.");
 }

@@ -80,6 +80,13 @@ public sealed class WinPeMediaBuilder(IProcessRunner runner) : IWinPeMediaBuilde
                 }
             }
 
+            // DISM verifies driver catalogs; never use /ForceUnsigned. Injection completes before any disk erase.
+            foreach (string inf in request.DriverInfPaths)
+            {
+                string driver = DeploymentGuard.AbsolutePath(inf, "Exported driver INF", true);
+                if (!Path.GetExtension(driver).Equals(".inf", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Expected an INF driver package.");
+                await RunAsync(new CommandSpec("dism.exe", [$"/Image:{mount}", "/Add-Driver", $"/Driver:{driver}"], requiresElevation: true, timeout: TimeSpan.FromMinutes(10)), "Inject verified driver into WinPE", cancellationToken).ConfigureAwait(false);
+            }
             string app = DeploymentGuard.AbsolutePath(request.WinPeExecutablePath, "WinPE executable", true);
             string destination = Path.Combine(mount, "Windows", "System32", "EasyWin");
             Directory.CreateDirectory(destination);
@@ -94,6 +101,8 @@ public sealed class WinPeMediaBuilder(IProcessRunner runner) : IWinPeMediaBuilde
 
             Directory.CreateDirectory(Path.GetDirectoryName(startup)!);
             await File.WriteAllTextAsync(startup, StartupIni(), new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+            if (request.PlanId.HasValue)
+                await File.WriteAllTextAsync(Path.Combine(destination, "plan-id.txt"), request.PlanId.Value.ToString("D"), cancellationToken).ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(mount, "Windows", "System32", "startnet.cmd"), "@echo off\r\nwpeinit\r\n", Encoding.ASCII, cancellationToken).ConfigureAwait(false);
             commit = true;
         }

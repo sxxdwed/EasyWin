@@ -142,7 +142,7 @@ public static class BootFilesCommandFactory
 
     public static CommandSpec RegisterFirmware(BootFilesRequest request) => new(
         "bcdboot.exe",
-        [Path.Combine(request.WindowsDirectory, "Windows"), "/f", "UEFI", "/l", request.Locale],
+        [Path.Combine(request.WindowsDirectory, "Windows"), "/p", "/l", request.Locale],
         requiresElevation: true,
         timeout: TimeSpan.FromMinutes(5));
 }

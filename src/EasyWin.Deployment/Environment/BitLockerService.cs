@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using EasyWin.Core.Processes;
 using EasyWin.Deployment.Commands;
 using EasyWin.Deployment.Models;
@@ -19,19 +19,20 @@ public sealed partial class BitLockerService(IProcessRunner processRunner) : IBi
     {
         ArgumentNullException.ThrowIfNull(processRunner);
         var letter = GetVolumeLetter(volumeRoot);
-        var command = new CommandSpec(
-            "manage-bde.exe",
-            ["-status", $"{letter}:"],
-            timeout: TimeSpan.FromMinutes(1));
+        string script = $$"""
+            $ErrorActionPreference='Stop'
+            $volumes = @(Get-CimInstance -Namespace 'root/CIMV2/Security/MicrosoftVolumeEncryption' -ClassName Win32_EncryptableVolume -Filter "DriveLetter='{{letter}}:'")
+            if ($volumes.Count -ne 1) { throw 'BitLocker volume missing or ambiguous' }
+            $conversion = Invoke-CimMethod -InputObject $volumes[0] -MethodName GetConversionStatus
+            $protection = Invoke-CimMethod -InputObject $volumes[0] -MethodName GetProtectionStatus
+            if ($conversion.ReturnValue -ne 0 -or $protection.ReturnValue -ne 0) { throw 'BitLocker status query failed' }
+            [pscustomobject]@{ ConversionStatus=[int]$conversion.ConversionStatus; ProtectionStatus=[int]$protection.ProtectionStatus; EncryptionPercentage=[int]$conversion.EncryptionPercentage } | ConvertTo-Json -Compress
+            """;
+        var command = new CommandSpec("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script))], requiresElevation: true);
         var result = await processRunner.RunAsync(command, cancellationToken).ConfigureAwait(false);
         CommandFailureException.ThrowIfFailed("BitLocker status", result);
 
-        var conversion = GetValue(result.StandardOutput, "Conversion Status") ?? "Unknown";
-        var protection = GetValue(result.StandardOutput, "Protection Status") ?? "Unknown";
-        var encrypted = !conversion.Contains("Fully Decrypted", StringComparison.OrdinalIgnoreCase) &&
-                        !conversion.Contains("0.0%", StringComparison.OrdinalIgnoreCase);
-        var protectionEnabled = protection.Contains("Protection On", StringComparison.OrdinalIgnoreCase);
-        return new BitLockerVolumeStatus($"{letter}:\\", conversion, protection, encrypted, protectionEnabled);
+        return ParseStatus($"{letter}:\\", result.StandardOutput);
     }
 
     private static char GetVolumeLetter(string root)
@@ -45,13 +46,14 @@ public sealed partial class BitLockerService(IProcessRunner processRunner) : IBi
         return DeploymentGuard.DriveLetter(pathRoot[0]);
     }
 
-    private static string? GetValue(string output, string name)
+    public static BitLockerVolumeStatus ParseStatus(string root, string output)
     {
-        var match = Regex.Match(
-            output,
-            $"(?im)^\\s*{Regex.Escape(name)}\\s*:\\s*(?<value>.+?)\\s*$",
-            RegexOptions.CultureInvariant,
-            TimeSpan.FromSeconds(1));
-        return match.Success ? match.Groups["value"].Value.Trim() : null;
+        using var json = JsonDocument.Parse(output);
+        int conversion = json.RootElement.GetProperty("ConversionStatus").GetInt32();
+        int protection = json.RootElement.GetProperty("ProtectionStatus").GetInt32();
+        int percentage = json.RootElement.GetProperty("EncryptionPercentage").GetInt32();
+        if (conversion is < 0 or > 5 || protection is < 0 or > 1 || percentage is < 0 or > 100)
+            throw new DeploymentSafetyException("bitlocker.unknown", "BitLocker returned an unknown state.");
+        return new(root, conversion.ToString(System.Globalization.CultureInfo.InvariantCulture), protection.ToString(System.Globalization.CultureInfo.InvariantCulture), conversion != 0 || percentage != 0, protection != 0);
     }
 }

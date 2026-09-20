@@ -1,8 +1,8 @@
-# EasyWin 1.3.0-beta.1
+# EasyWin Beta 1 — 1.4.0-beta.1
 
 > BETA — experimental destructive deployment software. Automated tests and simulated deployment pass, but a complete real reboot/install/first-boot cycle has not been verified. Test first in a UEFI virtual machine with disposable disks. Do not use on your main PC without verified external backups and recovery media.
 
-Download the [beta release](https://github.com/sxxdwed/EasyWin/releases/tag/v1.3.0-beta.1). Older releases are superseded for testing.
+Download [EasyWin Beta 1](https://github.com/sxxdwed/EasyWin/releases/tag/v1.4.0-beta.1). Read the [remaining validation gates](docs/VALIDATION-GATES.md) before testing. Older downloadable releases have been retired.
 
 ## Two-disk beta
 
@@ -43,7 +43,7 @@ If elevation, UEFI, AC power, free space, BitLocker state, ADK files, image meta
 - Windows ADK plus the matching WinPE add-on.
 - An official Windows ISO containing `sources\install.wim` or `sources\install.esd`.
 - Local, trusted application and driver payloads whose SHA-256 values match the catalogs.
-- BitLocker suspended through the supported Windows workflow before boot handoff. EasyWin never attempts to bypass or recover it.
+- Staging storage fully decrypted and accessible; suspending BitLocker protection alone does not decrypt it. EasyWin never attempts to bypass or recover BitLocker.
 
 ## Build and validation
 
@@ -62,7 +62,7 @@ Debug builds of the desktop default to DryRun. DryRun traverses Desktop preparat
 
 Profiles, applications, and driver packages are JSON. Installer and driver paths are relative to the catalog root; rooted paths and traversal are rejected. Arguments are stored as arrays and passed directly through `ProcessStartInfo.ArgumentList`, never through a shell. Placeholder or mismatched hashes block execution.
 
-The desktop application reads its application choices from the catalog rather than a hardcoded list. The prepared payload includes NVIDIA App, AMD Software: Adrenalin auto-detect, and MSI Center in addition to the standard applications. Vendor packages may declare hardware ID prefixes: incompatible entries are disabled in the UI and are skipped again by PostInstall as a second safety check. NVIDIA App and MSI Center are staged as offline installers; AMD's official auto-detect bootstrap requires an Internet connection after first boot to obtain the hardware-specific package.
+The desktop application reads its application choices from the catalog, including NVIDIA App, AMD Software and MSI Center. Public downloads do not include third-party installers or exported drivers. Missing or incompatible packages are disabled; selected packages require locally supplied payloads matching the catalog hashes. Network bootstrappers also require an Internet connection after first boot.
 
 Logs are split by responsibility (`installer.log`, `boot.log`, `disk.log`, `dism.log`, and `postinstall.log`) and each failure includes its deployment stage, tool exit code when available, and a user-facing reason.
 

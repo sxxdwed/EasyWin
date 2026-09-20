@@ -55,6 +55,11 @@ public sealed record ManifestFileEntry
 
 public sealed record DeploymentState
 {
+    public bool FirstBootValidated { get; init; }
+    public bool DestructiveWorkStarted { get; init; }
+    public IReadOnlyList<string> OptionalWarnings { get; init; } = [];
+    public IReadOnlyList<string> CompletedApplicationIds { get; init; } = [];
+    public IReadOnlyList<string> FailedApplicationIds { get; init; } = [];
     public DeploymentStage CurrentStage { get; init; } = DeploymentStage.NotStarted;
 
     public IReadOnlyList<DeploymentStage> CompletedStages { get; init; } = Array.Empty<DeploymentStage>();

@@ -23,6 +23,7 @@ namespace EasyWin.Desktop.Services;
 
 public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
 {
+    private static readonly string[] WinPeComponents = ["WinPE-WMI", "WinPE-NetFX", "WinPE-Scripting", "WinPE-PowerShell", "WinPE-StorageWMI"];
     private readonly IProcessRunner _runner;
     private readonly DeploymentFileLogger _logger;
     private readonly PhysicalDiskService _disks;
@@ -56,11 +57,11 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
                 .Select(static partition => partition.ShrinkAvailableBytes)
                 .DefaultIfEmpty(0)
                 .Max(),
-            snapshot.Identity)).ToArray();
+            snapshot.Identity) { Volumes = snapshot.Partitions }).ToArray();
         var profiles = new[]
         {
-            new ProfileChoice("standard", "Standard", "Стандартная конфигурация Windows без удаления системных компонентов."),
-            new ProfileChoice("lite", "Lite", "Удаляет выбранные потребительские приложения, Xbox/Game Bar и Teams. Update, Defender, Store, Edge и Recovery сохраняются."),
+            new ProfileChoice("standard", "Standard", EasyWin.Core.Localization.DeploymentStrings.Get("Ui101")),
+            new ProfileChoice("lite", "Lite", EasyWin.Core.Localization.DeploymentStrings.Get("Ui102")),
         };
         string configRoot = FindConfigRoot();
         ApplicationCatalog appCatalog = await new CatalogService(new SystemTextJsonSerializer())
@@ -84,9 +85,13 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             bool compatible = !hardwareSpecific || app.RequiredHardwareIdPrefixes.Any(prefix =>
                 hardwareIds.Any(actual => actual.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
             string availability = hardwareSpecific
-                ? compatible ? "совместимое оборудование найдено" : "нет совместимого оборудования — установка отключена"
-                : "готово для офлайн-установки";
-            return new ApplicationChoice(app.Id, app.Name, app.Description, app.Category, compatible, availability);
+                ? compatible ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui104") : EasyWin.Core.Localization.DeploymentStrings.Get("Ui105")
+                : EasyWin.Core.Localization.DeploymentStrings.Get("Ui106");
+            bool present;
+            try { present = File.Exists(PathValidator.ResolveUnderRoot(ResolvePayloadRoot(configRoot), app.Installer)); }
+            catch (ArgumentException) { present = false; }
+            if (!present) availability = EasyWin.Core.Localization.DeploymentStrings.Get("Ui103");
+            return new ApplicationChoice(app.Id, app.Name, app.Description, app.Category, compatible && present, availability);
         }).ToArray();
         return new DesktopDiscovery(disks, profiles, applications, ["Русский", "English"]);
     }
@@ -119,6 +124,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         long size = stageSize + 4L * 1024 * 1024 * 1024;
         PreflightReport report = await service.CheckAsync(new PreflightRequest(Path.GetPathRoot(Environment.SystemDirectory)!, request.IsoPath, size), cancellationToken).ConfigureAwait(false);
         var diskValidation = await ValidateDiskSelectionAsync(request, cancellationToken).ConfigureAwait(false);
+        var storageAvailability = await ValidateStorageAvailabilityAsync(request, cancellationToken).ConfigureAwait(false);
         (bool payloadsValid, string payloadsMessage) = await ValidateSelectedPayloadsAsync(request, cancellationToken).ConfigureAwait(false);
         var results = new List<UiPreflightCheck>();
         foreach (var descriptor in CheckIds())
@@ -135,21 +141,40 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             };
             bool pass = source?.Passed ?? descriptor.Id switch
             {
+                "storage-winpe" => storageAvailability.Passed,
                 "target-disk" or "erase-disks" or "staging-disk" or "staging-capacity" or "disk-layout" => diskValidation.Single(c => c.Code == descriptor.Id).Passed,
-                "staging" => Directory.Exists(DefaultAdkRoot()),
+                "staging" => Directory.Exists(request.AdkRoot ?? DefaultAdkRoot()),
                 "hashes" => payloadsValid,
                 _ => false,
             };
             string message = source?.Message ?? descriptor.Id switch
             {
+                "storage-winpe" => storageAvailability.Message,
                 "target-disk" or "erase-disks" or "staging-disk" or "staging-capacity" or "disk-layout" => diskValidation.Single(c => c.Code == descriptor.Id).Message,
                 "hashes" => payloadsMessage,
-                "staging" when !pass => "Windows ADK + WinPE add-on не найдены.",
-                _ => pass ? "Проверка пройдена." : "Проверка не пройдена.",
+                "staging" when !pass => EasyWin.Core.Localization.DeploymentStrings.Get("Ui112"),
+                _ => pass ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui110") : EasyWin.Core.Localization.DeploymentStrings.Get("Ui111"),
             };
             results.Add(new UiPreflightCheck(descriptor.Id, descriptor.Name, message, true, pass ? UiCheckStatus.Pass : UiCheckStatus.Fail));
         }
 
+        async Task Check(string code, string name, Func<Task> action)
+        {
+            try { await action().ConfigureAwait(false); results.Add(new(code, name, "PASS", true, UiCheckStatus.Pass)); }
+            catch (Exception e) when (e is not OperationCanceledException) { results.Add(new(code, name, e.Message, true, UiCheckStatus.Fail)); }
+        }
+        await Check("stale-deployment", EasyWin.Core.Localization.DeploymentStrings.Get("Ui97"), () => StaleDeploymentGuard.ValidateAsync(_disks, _runner, request.Language == "English" ? "en-US" : "ru-RU", cancellationToken));
+        await Check("image-edition", EasyWin.Core.Localization.DeploymentStrings.Get("Ui98"), async () =>
+        {
+            var editions = await InspectImageAsync(request.IsoPath, cancellationToken).ConfigureAwait(false);
+            if (!editions.Any(e => e == request.Edition) || ParseArchitecture(request.Edition.Architecture) != ProcessorArchitecture.X64)
+                throw new InvalidDataException("Selected image edition changed or is not supported amd64.");
+        });
+        await Check("winpe-complete", EasyWin.Core.Localization.DeploymentStrings.Get("Ui99"), () =>
+        {
+            WinPePrerequisites.Validate(request.AdkRoot ?? DefaultAdkRoot(), AppContext.BaseDirectory);
+            return Task.CompletedTask;
+        });
         return results;
     }
 
@@ -159,9 +184,28 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         {
             TargetDisk = request.TargetDisk.NativeIdentity as DiskIdentity ?? new(),
             StagingDisk = request.StagingDisk?.NativeIdentity as DiskIdentity,
+            StagingVolumeId = request.StagingVolume?.GptPartitionId,
             AdditionalDisksToErase = request.AdditionalDisksToErase.Select(d => d.NativeIdentity as DiskIdentity ?? new()).ToArray(),
         };
         return StagingSelection.CheckAsync(_disks, plan, EstimateStagingBytes(request.IsoPath), cancellationToken);
+    }
+
+    private async Task<DiskSelectionCheck> ValidateStorageAvailabilityAsync(UiPreparationRequest request, CancellationToken token)
+    {
+        string language = request.Language == "English" ? "en-US" : "ru-RU";
+        try
+        {
+            if (request.StagingDisk is not null && request.StagingDisk != request.TargetDisk)
+            {
+                var plan = new ReinstallPlan { TargetDisk = (DiskIdentity)request.TargetDisk.NativeIdentity,
+                    StagingDisk = (DiskIdentity)request.StagingDisk.NativeIdentity, StagingVolumeId = request.StagingVolume?.GptPartitionId,
+                    ExpectedStagingVolume = request.StagingVolume, Language = language };
+                var volume = await new StagingVolumeValidator(_disks, new BitLockerService(_runner)).ValidateAsync(plan, EstimateStagingBytes(request.IsoPath), token).ConfigureAwait(false);
+                if (!Directory.Exists(volume.DriveLetter + ":\\")) throw new IOException("Selected volume is inaccessible.");
+            }
+            return new("storage-winpe", true, EasyWin.Core.Localization.DeploymentStrings.Get("StorageAvailable", language));
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { return new("storage-winpe", false, e.Message); }
     }
 
     private static async Task<(bool IsValid, string Message)> ValidateSelectedPayloadsAsync(
@@ -213,10 +257,10 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
         ArgumentNullException.ThrowIfNull(request);
         if (request.DryRun)
         {
-            progress.Report(new UiDeploymentProgress("validation", "Проверка", "DryRun: входные данные проверены", 5));
+            progress.Report(new UiDeploymentProgress("validation", EasyWin.Core.Localization.DeploymentStrings.Get("Ui53"), "DryRun: входные данные проверены", 5));
             string workspace = Path.Combine(Path.GetTempPath(), "EasyWin", "DryRun");
             DryRunReport report = await new DryRunEngine().RunAsync(workspace, FindConfigRoot(), cancellationToken).ConfigureAwait(false);
-            progress.Report(new UiDeploymentProgress("postinstall", "Первый запуск", report.Message, 100));
+            progress.Report(new UiDeploymentProgress("postinstall", EasyWin.Core.Localization.DeploymentStrings.Get("Ui61"), report.Message, 100));
             return new UiWorkflowResult(report.Success, report.Message, report.ManifestPath);
         }
 
@@ -240,6 +284,9 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
                 ExecutionMode = ExecutionMode.Live,
                 TargetDisk = disk,
                 StagingDisk = request.StagingDisk?.NativeIdentity as DiskIdentity,
+                StagingVolumeId = request.StagingVolume?.GptPartitionId,
+                ExpectedStagingVolume = request.StagingVolume,
+                RequiredStagingBytes = EstimateStagingBytes(request.IsoPath),
                 AdditionalDisksToErase = request.AdditionalDisksToErase
                     .Select(choice => choice.NativeIdentity as DiskIdentity ?? throw new InvalidDataException("Стабильная идентичность дополнительного диска потеряна."))
                     .ToArray(),
@@ -277,7 +324,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
             string work = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyWin", "Work", plan.PlanId.ToString("N"));
             var mapped = new Progress<DeploymentProgress>(value => progress.Report(new UiDeploymentProgress(StageId(value.Stage), value.Stage.ToString(), value.Message, value.Percentage ?? 0)));
             string configRoot = FindConfigRoot();
-            DesktopPreparationResult result = await orchestrator.PrepareAsync(new DesktopPreparationRequest(plan, imagePath, DefaultAdkRoot(), winPePayload, postInstallPayload, configRoot, work, StagingDriveLetter: SelectStagingDriveLetter(), PayloadRoot: ResolvePayloadRoot(configRoot)), mapped, cancellationToken).ConfigureAwait(false);
+            DesktopPreparationResult result = await orchestrator.PrepareAsync(new DesktopPreparationRequest(plan, imagePath, request.AdkRoot ?? DefaultAdkRoot(), winPePayload, postInstallPayload, configRoot, work, StagingDriveLetter: SelectStagingDriveLetter(), PayloadRoot: ResolvePayloadRoot(configRoot)), mapped, cancellationToken).ConfigureAwait(false);
             return new UiWorkflowResult(true, "Deployment подготовлен; выполняется одноразовая загрузка WinPE.", result.ManifestPath);
         }
         finally
@@ -288,11 +335,12 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
 
     private static IEnumerable<(string Id, string Name)> CheckIds() =>
     [
-        ("administrator", "Права администратора"), ("uefi", "Режим UEFI"), ("target-disk", "Диск для Windows"),
-        ("erase-disks", "Диски для очистки"),
-        ("staging-disk", "Диск хранения — сохраняется"), ("staging-capacity", "Место для установки"), ("disk-layout", "Разметка целевого диска"),
-        ("bitlocker", "BitLocker"), ("image", "Образ Windows"), ("space", "Свободное место"),
-        ("power", "Питание"), ("staging", "Deployment-среда"), ("hashes", "Целостность файлов"),
+        ("administrator", EasyWin.Core.Localization.DeploymentStrings.Get("Ui80")), ("uefi", EasyWin.Core.Localization.DeploymentStrings.Get("Ui81")), ("target-disk", EasyWin.Core.Localization.DeploymentStrings.Get("Ui107")),
+        ("erase-disks", EasyWin.Core.Localization.DeploymentStrings.Get("Ui82")),
+        ("storage-winpe", EasyWin.Core.Localization.DeploymentStrings.Get("Ui100")),
+        ("staging-disk", EasyWin.Core.Localization.DeploymentStrings.Get("Ui108")), ("staging-capacity", EasyWin.Core.Localization.DeploymentStrings.Get("Ui109")), ("disk-layout", EasyWin.Core.Localization.DeploymentStrings.Get("Ui84")),
+        ("bitlocker", "BitLocker"), ("image", EasyWin.Core.Localization.DeploymentStrings.Get("Ui6")), ("space", EasyWin.Core.Localization.DeploymentStrings.Get("Ui85")),
+        ("power", EasyWin.Core.Localization.DeploymentStrings.Get("Ui86")), ("staging", EasyWin.Core.Localization.DeploymentStrings.Get("Ui87")), ("hashes", EasyWin.Core.Localization.DeploymentStrings.Get("Ui88")),
     ];
 
     private static bool IsSupportedFixedDisk(DiskIdentity disk) => disk.BusType is
@@ -332,7 +380,7 @@ public sealed class DesktopUiWorkflow : IDesktopUiWorkflow, IDisposable
 
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Windows Kits", "10", "Assessment and Deployment Kit", "Windows Preinstallation Environment");
     }
-    private static ProcessorArchitecture ParseArchitecture(string value) => Enum.TryParse(value, true, out ProcessorArchitecture result) ? result : ProcessorArchitecture.X64;
+    private static ProcessorArchitecture ParseArchitecture(string value) => Enum.TryParse(value, true, out ProcessorArchitecture result) ? result : throw new InvalidDataException("Unknown Windows image architecture.");
     private static string StageId(DeploymentStage stage) => stage switch
     {
         <= DeploymentStage.ValidateTargetDisk => "validation",

@@ -119,7 +119,8 @@ public sealed class PhysicalDiskService(IProcessRunner processRunner) : IPhysica
             GetBoolean(element, "IsReadOnly"),
             GetBoolean(element, "IsOffline"),
             GetString(element, "PartitionStyle") ?? "Unknown",
-            partitions.OrderBy(partition => partition.OffsetBytes).ToArray());
+            partitions.OrderBy(partition => partition.OffsetBytes).ToArray())
+        { UnallocatedExtents = UnallocatedStaging.FindExtents(identity.SizeBytes, partitions) };
     }
 
     private static PartitionInfo ParsePartition(int diskNumber, JsonElement element)

@@ -32,9 +32,19 @@ public sealed class LocalStagingPartitionService(
     {
         ArgumentNullException.ThrowIfNull(expectedDisk);
         ArgumentNullException.ThrowIfNull(request);
-        var before = await disks.GetDiskAsync(request.DiskNumber, cancellationToken).ConfigureAwait(false);
+        var before = await Staging.StagingSelection.ResolveAsync(disks, expectedDisk, cancellationToken).ConfigureAwait(false);
+        request = request with { DiskNumber = before.Identity.DiskNumber };
         EnsureDiskIdentity(expectedDisk, before.Identity);
-        EnsureSafeForShrink(before, request);
+        Staging.StagingSelection.Writable(before);
+        if (request.UnallocatedOffsetBytes.HasValue)
+        {
+            var extent = UnallocatedStaging.Select(before, request.RequestedSizeBytes);
+            if (extent is null || extent.OffsetBytes != request.UnallocatedOffsetBytes.Value)
+                throw new DeploymentSafetyException("staging.extent.changed", "Unallocated extent changed before staging.");
+            if (DriveInfo.GetDrives().Any(d => char.ToUpperInvariant(d.Name[0]) == char.ToUpperInvariant(request.StagingDriveLetter)))
+                throw new DeploymentSafetyException("staging.drive_letter_in_use", "Staging drive letter is occupied.");
+        }
+        else EnsureSafeForShrink(before, request);
 
         await diskPart.ExecuteAsync(
             scriptBuilder.CreateStagingPartition(request),
@@ -57,7 +67,7 @@ public sealed class LocalStagingPartitionService(
             };
         }
 
-        var after = await disks.GetDiskAsync(request.DiskNumber, cancellationToken).ConfigureAwait(false);
+        var after = await Staging.StagingSelection.ResolveAsync(disks, expectedDisk, cancellationToken).ConfigureAwait(false);
         EnsureDiskIdentity(expectedDisk, after.Identity);
         var letter = char.ToUpperInvariant(request.StagingDriveLetter).ToString();
         var partition = after.Partitions.SingleOrDefault(candidate =>
@@ -67,6 +77,8 @@ public sealed class LocalStagingPartitionService(
         {
             throw new DeploymentSafetyException("staging.create_unverified", "The new staging partition could not be identified by drive, label, and GPT GUID.");
         }
+        if (request.UnallocatedOffsetBytes.HasValue && partition.OffsetBytes != request.UnallocatedOffsetBytes.Value)
+            throw new DeploymentSafetyException("staging.extent.changed", "Created partition does not match the approved extent.");
 
         var following = after.Partitions.Where(candidate => candidate.OffsetBytes > partition.OffsetBytes).ToArray();
         if (following.Any(candidate => candidate.Role != PartitionRole.Recovery) || partition.SizeBytes < request.RequestedSizeBytes - 16 * 1024 * 1024)
@@ -92,7 +104,7 @@ public sealed class LocalStagingPartitionService(
     public async Task ValidateAsync(StagingPartitionIdentity expected, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(expected);
-        var snapshot = await disks.GetDiskAsync(expected.Disk.DiskNumber, cancellationToken).ConfigureAwait(false);
+        var snapshot = await Staging.StagingSelection.ResolveAsync(disks, expected.Disk, cancellationToken).ConfigureAwait(false);
         EnsureDiskIdentity(expected.Disk, snapshot.Identity);
         var actual = snapshot.Partitions.SingleOrDefault(partition => partition.GptPartitionId == expected.GptPartitionId);
         if (actual is null ||

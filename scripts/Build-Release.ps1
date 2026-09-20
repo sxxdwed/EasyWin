@@ -41,5 +41,7 @@ Get-ChildItem -LiteralPath $bundle -Filter '*.pdb' -File -Recurse | Remove-Item 
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $bundle -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $bundle -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'SECURITY.md') -Destination $bundle -Force
+Copy-Item -LiteralPath (Join-Path $repositoryRoot 'DEPLOYMENT-READY.md') -Destination $bundle -Force
+Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs') -Destination $bundle -Recurse -Force
 
 Write-Host "EasyWin release bundle: $bundle"

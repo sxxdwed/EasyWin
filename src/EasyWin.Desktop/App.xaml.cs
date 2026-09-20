@@ -12,6 +12,7 @@ public partial class App : Application
 
     public App()
     {
+        EasyWin.Core.Localization.DeploymentStrings.SetLanguage("ru-RU");
         _host = Host.CreateDefaultBuilder()
             .ConfigureServices(services =>
             {

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+<resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+<resheader name="version"><value>2.0</value></resheader>
+<data name="StorageAvailability" xml:space="preserve"><value>Доступность хранилища в WinPE</value></data>
+<data name="StorageEncrypted" xml:space="preserve"><value>Хранилище установки зашифровано BitLocker и не будет доступно в WinPE. Полностью расшифруйте выбранный том или выберите другое хранилище.</value></data>
+<data name="StorageChanged" xml:space="preserve"><value>Выбранный том хранения изменился. Выберите его заново и повторите проверку.</value></data>
+<data name="StorageSelect" xml:space="preserve"><value>Выберите точный том хранения установки.</value></data>
+<data name="StorageAvailable" xml:space="preserve"><value>Выбранный том доступен и полностью расшифрован; защита BitLocker выключена.</value></data>
+<data name="GenericFailure" xml:space="preserve"><value>Операция безопасно остановлена. Проверьте код ошибки и диагностический журнал.</value></data>
+<data name="TargetErased" xml:space="preserve"><value>Диск Windows будет полностью очищен.</value></data>
+<data name="StoragePreserved" xml:space="preserve"><value>Выбранный диск хранения будет сохранён.</value></data>
+<data name="AutoReboot" xml:space="preserve"><value>Компьютер автоматически перезагрузится в EasyWin WinPE. BIOS и Boot Menu не требуются.</value></data>
+<data name="StaleDeployment" xml:space="preserve"><value>Найдена незавершённая установка EasyWin. Отмените установку и проверьте варианты восстановления.</value></data>
+<data name="ExactVolume" xml:space="preserve"><value>Том хранения (обязателен для отдельного диска)</value></data>
+<data name="Ui0" xml:space="preserve"><value>Безопасная локальная переустановка Windows</value></data>
+<data name="Ui1" xml:space="preserve"><value>ЭТАПЫ</value></data>
+<data name="Ui2" xml:space="preserve"><value>Что сохранится</value></data>
+<data name="Ui3" xml:space="preserve"><value>UEFI, Secure Boot и TPM не изменяются. EasyWin использует штатный Windows Boot Manager.</value></data>
+<data name="Ui4" xml:space="preserve"><value>Настройка установки</value></data>
+<data name="Ui5" xml:space="preserve"><value>Выберите официальный образ, редакцию и целевой диск. Проверки выполняются до любых изменений.</value></data>
+<data name="Ui6" xml:space="preserve"><value>Образ Windows</value></data>
+<data name="Ui7" xml:space="preserve"><value>Официальный ISO с install.wim или install.esd</value></data>
+<data name="Ui8" xml:space="preserve"><value>Путь к ISO</value></data>
+<data name="Ui9" xml:space="preserve"><value>Выбрать ISO</value></data>
+<data name="Ui10" xml:space="preserve"><value>Выбрать ISO Windows</value></data>
+<data name="Ui11" xml:space="preserve"><value>Редакция</value></data>
+<data name="Ui12" xml:space="preserve"><value>Редакция Windows</value></data>
+<data name="Ui13" xml:space="preserve"><value>Язык</value></data>
+<data name="Ui14" xml:space="preserve"><value>Язык Windows</value></data>
+<data name="Ui15" xml:space="preserve"><value>Диски</value></data>
+<data name="Ui16" xml:space="preserve"><value>Куда установить Windows</value></data>
+<data name="Ui17" xml:space="preserve"><value>Целевой диск</value></data>
+<data name="Ui18" xml:space="preserve"><value>Диск Windows БУДЕТ ОЧИЩЕН</value></data>
+<data name="Ui19" xml:space="preserve"><value>Хранилище установки — отдельный диск НЕ БУДЕТ ОЧИЩЕН. Выберите диск Windows для режима с защищённым временным разделом.</value></data>
+<data name="Ui20" xml:space="preserve"><value>Хранилище установки</value></data>
+<data name="Ui21" xml:space="preserve"><value>Точный том хранения / Deployment volume</value></data>
+<data name="Ui22" xml:space="preserve"><value>Точный том хранения</value></data>
+<data name="Ui23" xml:space="preserve"><value>Дополнительно очистить второй диск (необязательно)</value></data>
+<data name="Ui24" xml:space="preserve"><value>Очистить дополнительный диск</value></data>
+<data name="Ui25" xml:space="preserve"><value>Целевой диск Windows очищается всегда. Отмеченный второй диск тоже будет полностью переразмечен и получит один новый раздел Data. Временный раздел EasyWin защищён до успешной загрузки новой Windows.</value></data>
+<data name="Ui26" xml:space="preserve"><value>Профиль и драйверы</value></data>
+<data name="Ui27" xml:space="preserve"><value>Профиль</value></data>
+<data name="Ui28" xml:space="preserve"><value>Профиль Windows</value></data>
+<data name="Ui29" xml:space="preserve"><value>Драйверы</value></data>
+<data name="Ui30" xml:space="preserve"><value>Режим драйверов</value></data>
+<data name="Ui31" xml:space="preserve"><value>Активация Windows</value></data>
+<data name="Ui32" xml:space="preserve"><value>Автоматически через штатную цифровую лицензию или совместимый OEM-ключ UEFI. Лицензия и ключ продукта в EasyWin не включены.</value></data>
+<data name="Ui33" xml:space="preserve"><value>Программы</value></data>
+<data name="Ui34" xml:space="preserve"><value>Обычные и фирменные программы. Установщик допускается только после проверки подписи, пути и SHA-256.</value></data>
+<data name="Ui35" xml:space="preserve"><value>Проверка готовности</value></data>
+<data name="Ui36" xml:space="preserve"><value>Проверить снова</value></data>
+<data name="Ui37" xml:space="preserve"><value>Ход подготовки</value></data>
+<data name="Ui38" xml:space="preserve"><value>Подтверждение удаления данных</value></data>
+<data name="Ui39" xml:space="preserve"><value>После нажатия потребуется вручную подтвердить точные Device ID всех выбранных дисков.</value></data>
+<data name="Ui40" xml:space="preserve"><value>Переустановить Windows</value></data>
+<data name="Ui41" xml:space="preserve"><value>Подтверждение выбранных дисков</value></data>
+<data name="Ui42" xml:space="preserve"><value>Последнее подтверждение</value></data>
+<data name="Ui43" xml:space="preserve"><value>Проверьте назначение каждого диска. После перезагрузки все разделы и данные на перечисленных дисках будут удалены.</value></data>
+<data name="Ui44" xml:space="preserve"><value>Введите указанную фразу без изменений:</value></data>
+<data name="Ui45" xml:space="preserve"><value>Фраза подтверждения диска</value></data>
+<data name="Ui46" xml:space="preserve"><value>Отмена</value></data>
+<data name="Ui47" xml:space="preserve"><value>Подтвердить диски</value></data>
+<data name="Ui48" xml:space="preserve"><value>Выберите образ и выполните проверку.</value></data>
+<data name="Ui49" xml:space="preserve"><value>DryRun · безопасная симуляция</value></data>
+<data name="Ui50" xml:space="preserve"><value>Реальный режим</value></data>
+<data name="Ui51" xml:space="preserve"><value>Автоматически по Hardware ID</value></data>
+<data name="Ui52" xml:space="preserve"><value>Не устанавливать</value></data>
+<data name="Ui53" xml:space="preserve"><value>Проверка</value></data>
+<data name="Ui54" xml:space="preserve"><value>Среда, образ и диск</value></data>
+<data name="Ui55" xml:space="preserve"><value>Подготовка</value></data>
+<data name="Ui56" xml:space="preserve"><value>Локальный deployment-раздел</value></data>
+<data name="Ui57" xml:space="preserve"><value>Загрузка</value></data>
+<data name="Ui58" xml:space="preserve"><value>Одноразовая запись WinPE</value></data>
+<data name="Ui59" xml:space="preserve"><value>Установка</value></data>
+<data name="Ui60" xml:space="preserve"><value>DISM, GPT и BCDBoot</value></data>
+<data name="Ui61" xml:space="preserve"><value>Первый запуск</value></data>
+<data name="Ui62" xml:space="preserve"><value>Драйверы, приложения, очистка</value></data>
+<data name="Ui63" xml:space="preserve"><value>Запустить DryRun</value></data>
+<data name="Ui64" xml:space="preserve"><value>Сначала выберите ISO — после проверки здесь появится редакция Windows.</value></data>
+<data name="Ui65" xml:space="preserve"><value>Выберите диск для Windows.</value></data>
+<data name="Ui66" xml:space="preserve"><value> · Хранилище: защищённый раздел на диске Windows</value></data>
+<data name="Ui67" xml:space="preserve"><value> · второй диск не очищается</value></data>
+<data name="Ui68" xml:space="preserve"><value>Я понимаю, что все данные на диске Windows будут удалены</value></data>
+<data name="Ui69" xml:space="preserve"><value>Я понимаю, что все данные на обоих выбранных дисках будут удалены</value></data>
+<data name="Ui70" xml:space="preserve"><value>Дополнительные программы не выбраны</value></data>
+<data name="Ui71" xml:space="preserve"><value>Выбрана 1 программа</value></data>
+<data name="Ui72" xml:space="preserve"><value>Автоматическое чтение ISO завершилось ошибкой. Выберите образ вручную.</value></data>
+<data name="Ui73" xml:space="preserve"><value>Обнаружение системы завершилось ошибкой.</value></data>
+<data name="Ui74" xml:space="preserve"><value>В ISO не найден install.wim или install.esd с поддерживаемой редакцией.</value></data>
+<data name="Ui75" xml:space="preserve"><value>В выбранном ISO не найдена поддерживаемая редакция Windows.</value></data>
+<data name="Ui76" xml:space="preserve"><value>Заполните образ, редакцию, профиль, язык и целевой диск.</value></data>
+<data name="Ui77" xml:space="preserve"><value>Проверяется…</value></data>
+<data name="Ui78" xml:space="preserve"><value>DryRun завершён</value></data>
+<data name="Ui79" xml:space="preserve"><value>Подготовка завершена</value></data>
+<data name="Ui80" xml:space="preserve"><value>Права администратора</value></data>
+<data name="Ui81" xml:space="preserve"><value>Режим UEFI</value></data>
+<data name="Ui82" xml:space="preserve"><value>Диски для очистки</value></data>
+<data name="Ui83" xml:space="preserve"><value>Место в хранилище</value></data>
+<data name="Ui84" xml:space="preserve"><value>Разметка целевого диска</value></data>
+<data name="Ui85" xml:space="preserve"><value>Свободное место</value></data>
+<data name="Ui86" xml:space="preserve"><value>Питание</value></data>
+<data name="Ui87" xml:space="preserve"><value>Deployment-среда</value></data>
+<data name="Ui88" xml:space="preserve"><value>Целостность файлов</value></data>
+<data name="Ui89" xml:space="preserve"><value>Подходящие локальные диски не найдены.</value></data>
+<data name="Ui90" xml:space="preserve"><value>Выберите диск и запустите проверку.</value></data>
+<data name="Ui91" xml:space="preserve"><value>Выберите ISO и запустите проверку готовности.</value></data>
+<data name="Ui92" xml:space="preserve"><value>Требуется проверка</value></data>
+<data name="Ui93" xml:space="preserve"><value>Выполните проверку готовности после изменения параметров.</value></data>
+<data name="Ui94" xml:space="preserve"><value>Выберите официальный ISO Windows</value></data>
+<data name="Ui95" xml:space="preserve"><value>Образ Windows (*.iso)|*.iso</value></data>
+<data name="Ui96" xml:space="preserve"><value>Ожидание проверки</value></data>
+<data name="Ui97" xml:space="preserve"><value>Предыдущие установки EasyWin</value></data>
+<data name="Ui98" xml:space="preserve"><value>Редакция и архитектура образа</value></data>
+<data name="Ui99" xml:space="preserve"><value>Полнота ADK / WinPE / PostInstall</value></data>
+<data name="Ui100" xml:space="preserve"><value>Доступность хранилища в WinPE</value></data>
+<data name="Ui101" xml:space="preserve"><value>Стандартная конфигурация Windows без удаления системных компонентов.</value></data>
+<data name="Ui102" xml:space="preserve"><value>Удаляет выбранные потребительские приложения, Xbox/Game Bar и Teams. Update, Defender, Store, Edge и Recovery сохраняются.</value></data>
+<data name="Ui103" xml:space="preserve"><value>Установщик отсутствует — приложение недоступно</value></data>
+<data name="Ui104" xml:space="preserve"><value>совместимое оборудование найдено</value></data>
+<data name="Ui105" xml:space="preserve"><value>нет совместимого оборудования — установка отключена</value></data>
+<data name="Ui106" xml:space="preserve"><value>готово для офлайн-установки</value></data>
+<data name="Ui107" xml:space="preserve"><value>Диск для Windows</value></data>
+<data name="Ui108" xml:space="preserve"><value>Диск хранения — сохраняется</value></data>
+<data name="Ui109" xml:space="preserve"><value>Место для установки</value></data>
+<data name="Ui110" xml:space="preserve"><value>Проверка пройдена.</value></data>
+<data name="Ui111" xml:space="preserve"><value>Проверка не пройдена.</value></data>
+<data name="Ui112" xml:space="preserve"><value>Windows ADK + WinPE add-on не найдены.</value></data>
+<data name="EditionSummary" xml:space="preserve"><value>Будет установлена: {0} · {1}</value></data>
+<data name="TargetSummary" xml:space="preserve"><value>Windows → {0} — БУДЕТ ОЧИЩЕН</value></data>
+<data name="StorageSummary" xml:space="preserve"><value> · Хранилище → {0} — НЕ БУДЕТ ОЧИЩЕН</value></data>
+<data name="EraseSummary" xml:space="preserve"><value> · Очистить также → {0}</value></data>
+<data name="AppsCount" xml:space="preserve"><value>Выбрано программ: {0}</value></data>
+<data name="AutoIsoError" xml:space="preserve"><value>Не удалось автоматически открыть ISO: {0}</value></data>
+<data name="DiscoveryError" xml:space="preserve"><value>Не удалось получить сведения о системе: {0}</value></data>
+<data name="EditionsFound" xml:space="preserve"><value>Найдено редакций: {0}. Выбрана {1}.</value></data>
+<data name="EditionSelected" xml:space="preserve"><value>Выбрана {0}. Запустите проверку готовности.</value></data>
+<data name="CriticalChecks" xml:space="preserve"><value>Критические проверки не пройдены: {0}.</value></data>
+<data name="StageValidateEnvironment" xml:space="preserve"><value>Проверка среды</value></data>
+<data name="StageValidateManifest" xml:space="preserve"><value>Проверка дисков и файлов</value></data>
+<data name="StagePrepareStaging" xml:space="preserve"><value>Подготовка хранилища и WinPE</value></data>
+<data name="StagePrepareBoot" xml:space="preserve"><value>Проверка файлов и подготовка одноразовой загрузки</value></data>
+<data name="StageAwaitingWinPeBoot" xml:space="preserve"><value>Подготовка автоматической перезагрузки в WinPE</value></data>
+<data name="StagePrepareDisk" xml:space="preserve"><value>Подготовка диска</value></data>
+<data name="StageApplyImage" xml:space="preserve"><value>Установка Windows</value></data>
+<data name="StageConfigureBoot" xml:space="preserve"><value>Создание загрузочных файлов UEFI</value></data>
+<data name="StagePartitionDisk" xml:space="preserve"><value>Очистка подтверждённого дополнительного диска</value></data>
+<data name="StageAwaitingFirstBoot" xml:space="preserve"><value>Первый запуск новой Windows</value></data>
+<data name="StageInstallDrivers" xml:space="preserve"><value>Установка совместимых драйверов</value></data>
+<data name="StageInstallApplications" xml:space="preserve"><value>Установка дополнительных приложений</value></data>
+<data name="StageApplyProfile" xml:space="preserve"><value>Применение выбранного профиля</value></data>
+<data name="StageActivateWindows" xml:space="preserve"><value>Проверка активации Windows</value></data>
+<data name="StageCleanupStaging" xml:space="preserve"><value>Настройка восстановления и очистка хранилища</value></data>
+<data name="StageCompleted" xml:space="preserve"><value>Завершено</value></data>
+<data name="NoBios" xml:space="preserve"><value>EasyWin не требует BIOS, Boot Menu или USB. Компьютер один раз загрузится в WinPE через Windows Boot Manager. Требуется работающая текущая Windows.</value></data>
+  <data name="Prerequisites" xml:space="preserve"><value>Зависимости установки</value></data>
+  <data name="AdkFolder" xml:space="preserve"><value>Папка Windows Preinstallation Environment</value></data>
+  <data name="BrowseFolder" xml:space="preserve"><value>Выбрать папку</value></data>
+  <data name="RefreshDependencies" xml:space="preserve"><value>Проверить снова</value></data>
+  <data name="AdkDownload" xml:space="preserve"><value>Загрузки Microsoft</value></data>
+  <data name="DependencyFound" xml:space="preserve"><value>Найден</value></data>
+  <data name="DependencyMissing" xml:space="preserve"><value>Отсутствует</value></data>
+  <data name="CopyError" xml:space="preserve"><value>Скопировать сведения об ошибке</value></data>
+</root>

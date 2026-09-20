@@ -67,6 +67,15 @@ public sealed class ApplicationInstaller(IProcessRunner runner, IHashService has
 
 public sealed partial class DriverInstaller(IProcessRunner runner, IHashService hashes)
 {
+    public async Task InstallExportedAsync(string root, CancellationToken token)
+    {
+        foreach (string inf in Directory.EnumerateFiles(root, "*.inf", SearchOption.AllDirectories))
+        {
+            _ = PathValidator.ResolveUnderRoot(root, Path.GetRelativePath(root, inf), true);
+            var result = await runner.RunAsync(new CommandSpec("pnputil.exe", ["/add-driver", inf, "/install"], requiresElevation: true, acceptableExitCodes: new HashSet<int> { 0, 3010 }), token).ConfigureAwait(false);
+            CommandFailureException.ThrowIfFailed("Install verified exported driver", result);
+        }
+    }
     public async Task<IReadOnlySet<string>> DetectHardwareIdsAsync(ExecutionMode mode, CancellationToken cancellationToken = default)
     {
         var command = new CommandSpec("pnputil.exe", ["/enum-devices", "/connected", "/deviceids"], timeout: TimeSpan.FromMinutes(2));
@@ -305,6 +314,11 @@ public sealed class CleanupService(
     {
         ArgumentNullException.ThrowIfNull(manifest);
         PhysicalDiskSnapshot snapshot = await Staging.StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+        if (!mode.IsDryRun())
+        {
+            FirstBootGuard.ValidateCurrent(manifest, snapshot);
+            if (!manifest.State.FirstBootValidated) throw new DeploymentSafetyException("cleanup.bootstrap", "PostInstall first-boot checkpoint is missing.");
+        }
         if (!diskValidator.Validate(manifest.TargetDisk, snapshot.Identity).IsValid)
         {
             throw new DeploymentSafetyException("cleanup.disk.changed", "Target disk identity changed; cleanup was cancelled.");
@@ -341,12 +355,7 @@ public sealed class CleanupService(
             if (!mode.IsDryRun())
             {
                 CommandFailureException.ThrowIfFailed("Enable Windows Recovery", await runner.RunAsync(new CommandSpec("reagentc.exe", ["/enable"], requiresElevation: true), cancellationToken).ConfigureAwait(false));
-                foreach (string file in entries.Where(File.Exists).Where(f => Path.GetRelativePath(root, f).StartsWith("Logs" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
-                {
-                    string saved = PathValidator.ResolveUnderRoot(workDirectory, Path.Combine("DeploymentLogs", Path.GetRelativePath(root, file)));
-                    Directory.CreateDirectory(Path.GetDirectoryName(saved)!);
-                    File.Copy(file, saved, true);
-                }
+                DeploymentLogArchive.Preserve(root, workDirectory, manifest.PlanId);
                 foreach (string file in entries.Where(File.Exists)) File.Delete(file);
                 foreach (string directory in entries.Where(Directory.Exists).OrderByDescending(d => d.Length)) Directory.Delete(directory);
                 Directory.Delete(root);
@@ -361,6 +370,12 @@ public sealed class CleanupService(
         }
 
         var request = new FinalizeDiskRequest(snapshot.Identity.DiskNumber, stage.GptPartitionId, stage.PartitionNumber);
+        if (!mode.IsDryRun())
+        {
+            if (string.IsNullOrWhiteSpace(stage.DriveLetter))
+                throw new DeploymentSafetyException("cleanup.logs.unavailable", "Deployment logs must be accessible before removing the staging partition.");
+            DeploymentLogArchive.Preserve(stage.DriveLetter + ":\\", workDirectory, manifest.PlanId);
+        }
         await diskPart.ExecuteAsync(scripts.RemoveStagingAndCreateRecovery(request), workDirectory, mode, cancellationToken).ConfigureAwait(false);
         if (manifest.Boot.BootEntryId.HasValue)
         {

@@ -26,6 +26,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref _selectedStagingDisk, value))
             {
+                StagingVolumes.Clear();
+                if (value is not null && value != SelectedDisk)
+                    foreach (var volume in value.Volumes.Where(p => p.GptPartitionId != Guid.Empty && p.DriveLetter is { Length: 1 }))
+                        StagingVolumes.Add(new(volume));
+                SelectedStagingVolume = StagingVolumes.Count == 1 ? StagingVolumes[0] : null;
                 RebuildAdditionalDiskChoices();
                 DestructiveAcknowledged = false;
                 OnPropertyChanged(nameof(DiskSelectionSummary));
@@ -35,12 +40,46 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
     public ObservableCollection<DiskChoice> StagingDisks { get; } = [];
+    public ObservableCollection<StagingVolumeChoice> StagingVolumes { get; } = [];
+    private StagingVolumeChoice? _selectedStagingVolume;
+    public StagingVolumeChoice? SelectedStagingVolume
+    {
+        get => _selectedStagingVolume;
+        set { if (SetProperty(ref _selectedStagingVolume, value)) { DestructiveAcknowledged = false; InvalidateChecks(); } }
+    }
     private DriverModeChoice? _selectedDriverMode;
     private bool _destructiveAcknowledged;
     private bool _isBusy;
     private bool _hasProgress;
-    private string _blockingMessage = "Выберите образ и выполните проверку.";
+    private string _blockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui48");
     private bool _disposed;
+    private string _adkRoot = EasyWin.Deployment.WinPe.WinPePrerequisites.DefaultRoot;
+    public string AdkRoot
+    {
+        get => _adkRoot;
+        set { if (SetProperty(ref _adkRoot, value)) { InvalidateChecks(); Prerequisites.Clear(); } }
+    }
+    public ObservableCollection<PrerequisiteDisplay> Prerequisites { get; } = [];
+    public AsyncRelayCommand RefreshPrerequisitesCommand { get; }
+    public AsyncRelayCommand BrowseAdkCommand { get; }
+    public AsyncRelayCommand OpenAdkDownloadCommand { get; }
+    public AsyncRelayCommand CopyErrorCommand { get; }
+    private string _lastError = string.Empty;
+
+    public sealed record PrerequisiteDisplay(string Name, string Path, bool Found)
+    {
+        public string Status => EasyWin.Core.Localization.DeploymentStrings.Get(Found ? "DependencyFound" : "DependencyMissing");
+        public System.Windows.Media.Brush StatusBrush => Found ? System.Windows.Media.Brushes.MediumSeaGreen : System.Windows.Media.Brushes.IndianRed;
+    }
+
+    private Task RefreshPrerequisitesAsync()
+    {
+        Prerequisites.Clear();
+        foreach (var item in EasyWin.Deployment.WinPe.WinPePrerequisites.Inspect(AdkRoot, AppContext.BaseDirectory))
+            Prerequisites.Add(new(item.Name, item.Path, item.Found));
+        InvalidateChecks();
+        return Task.CompletedTask;
+    }
 
     public MainViewModel(IDesktopUiWorkflow workflow, IInteractionService interaction)
     {
@@ -48,23 +87,48 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _interaction = interaction;
 
         DryRun = ResolveDryRunDefault();
-        ModeLabel = DryRun ? "DryRun · безопасная симуляция" : "Реальный режим";
 
-        DriverModes.Add(new DriverModeChoice("automatic", "Автоматически по Hardware ID"));
-        DriverModes.Add(new DriverModeChoice("none", "Не устанавливать"));
+        DriverModes.Add(new DriverModeChoice("automatic", EasyWin.Core.Localization.DeploymentStrings.Get("Ui51")));
+        DriverModes.Add(new DriverModeChoice("none", EasyWin.Core.Localization.DeploymentStrings.Get("Ui52")));
         _selectedDriverMode = DriverModes[0];
 
-        Stages.Add(new StageDisplayItem("validation", "Проверка", "Среда, образ и диск"));
-        Stages.Add(new StageDisplayItem("staging", "Подготовка", "Локальный deployment-раздел"));
-        Stages.Add(new StageDisplayItem("boot", "Загрузка", "Одноразовая запись WinPE"));
-        Stages.Add(new StageDisplayItem("deployment", "Установка", "DISM, GPT и BCDBoot"));
-        Stages.Add(new StageDisplayItem("postinstall", "Первый запуск", "Драйверы, приложения, очистка"));
+        Stages.Add(new StageDisplayItem("validation", EasyWin.Core.Localization.DeploymentStrings.Get("Ui53"), EasyWin.Core.Localization.DeploymentStrings.Get("Ui54")));
+        Stages.Add(new StageDisplayItem("staging", EasyWin.Core.Localization.DeploymentStrings.Get("Ui55"), EasyWin.Core.Localization.DeploymentStrings.Get("Ui56")));
+        Stages.Add(new StageDisplayItem("boot", EasyWin.Core.Localization.DeploymentStrings.Get("Ui57"), EasyWin.Core.Localization.DeploymentStrings.Get("Ui58")));
+        Stages.Add(new StageDisplayItem("deployment", EasyWin.Core.Localization.DeploymentStrings.Get("Ui59"), EasyWin.Core.Localization.DeploymentStrings.Get("Ui60")));
+        Stages.Add(new StageDisplayItem("postinstall", EasyWin.Core.Localization.DeploymentStrings.Get("Ui61"), EasyWin.Core.Localization.DeploymentStrings.Get("Ui62")));
 
         AddInitialChecks();
 
         BrowseIsoCommand = new AsyncRelayCommand(BrowseIsoAsync, () => IsNotBusy, HandleError);
         RunChecksCommand = new AsyncRelayCommand(RunChecksAsync, CanRunChecks, HandleError);
         ReinstallCommand = new AsyncRelayCommand(StartAsync, () => CanStart, HandleError);
+        RefreshPrerequisitesCommand = new AsyncRelayCommand(_ => RefreshPrerequisitesAsync(), () => IsNotBusy, HandleError);
+        BrowseAdkCommand = new AsyncRelayCommand(async token =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = EasyWin.Core.Localization.DeploymentStrings.Get("AdkFolder") };
+            if (dialog.ShowDialog(Application.Current.MainWindow) == true)
+            {
+                AdkRoot = dialog.FolderName;
+                await RefreshPrerequisitesAsync();
+            }
+        }, () => IsNotBusy, HandleError);
+        OpenAdkDownloadCommand = new AsyncRelayCommand(token =>
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(EasyWin.Deployment.WinPe.WinPePrerequisites.DownloadUrl) { UseShellExecute = true });
+            return Task.CompletedTask;
+        }, () => IsNotBusy, HandleError);
+        CopyErrorCommand = new AsyncRelayCommand(token =>
+        {
+            string diagnostics = string.IsNullOrEmpty(_lastError)
+                ? BlockingMessage + Environment.NewLine + string.Join(Environment.NewLine,
+                    Checks.Where(check => check.Status == UiCheckStatus.Fail).Select(check => $"[{check.Id}] {check.Name}: {check.Message}"))
+                : _lastError;
+            Clipboard.SetText(diagnostics);
+            return Task.CompletedTask;
+        }, () => IsNotBusy, exception => _interaction.ShowError("EasyWin", exception.Message));
+        try { _ = RefreshPrerequisitesAsync(); }
+        catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException) { BlockingMessage = error.Message; }
     }
 
     public ObservableCollection<EditionChoice> Editions { get; } = [];
@@ -83,29 +147,29 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand ReinstallCommand { get; }
 
     public bool DryRun { get; }
-    public string ModeLabel { get; }
-    public string PrimaryActionLabel => DryRun ? "Запустить DryRun" : "Переустановить Windows";
+    public string ModeLabel => DryRun ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui49") : EasyWin.Core.Localization.DeploymentStrings.Get("Ui50");
+    public string PrimaryActionLabel => DryRun ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui63") : EasyWin.Core.Localization.DeploymentStrings.Get("Ui40");
     public bool HasEditions => Editions.Count > 0;
     public string EditionSummary => SelectedEdition is null
-        ? "Сначала выберите ISO — после проверки здесь появится редакция Windows."
-        : $"Будет установлена: {SelectedEdition.DisplayName} · {SelectedEdition.Architecture}";
+        ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui64")
+        : EasyWin.Core.Localization.DeploymentStrings.Format("EditionSummary", SelectedEdition.DisplayName, SelectedEdition.Architecture);
     public string DiskSelectionSummary => SelectedDisk is null
-        ? "Выберите диск для Windows."
-        : $"Windows → {SelectedDisk.DisplayName} — БУДЕТ ОЧИЩЕН" +
+        ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui65")
+        : EasyWin.Core.Localization.DeploymentStrings.Format("TargetSummary", SelectedDisk.DisplayName) +
           (SelectedStagingDisk is null || SelectedStagingDisk == SelectedDisk
-              ? " · Хранилище: защищённый раздел на диске Windows"
-              : $" · Хранилище → {SelectedStagingDisk.DisplayName} — НЕ БУДЕТ ОЧИЩЕН") +
+              ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui66")
+              : EasyWin.Core.Localization.DeploymentStrings.Format("StorageSummary", SelectedStagingDisk.DisplayName)) +
           (SelectedAdditionalDisks.Count == 0
-              ? " · второй диск не очищается"
-              : $" · очистить также → {SelectedAdditionalDisks[0].DisplayName}");
+              ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui67")
+              : EasyWin.Core.Localization.DeploymentStrings.Format("EraseSummary", SelectedAdditionalDisks[0].DisplayName));
     public string DestructiveAcknowledgementText => SelectedAdditionalDisks.Count == 0
-        ? "Я понимаю, что все данные на диске Windows будут удалены"
-        : "Я понимаю, что все данные на обоих выбранных дисках будут удалены";
+        ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui68")
+        : EasyWin.Core.Localization.DeploymentStrings.Get("Ui69");
     public string SelectedApplicationsSummary => Applications.Count(static item => item.IsSelected) switch
     {
-        0 => "Дополнительные программы не выбраны",
-        1 => "Выбрана 1 программа",
-        var count => $"Выбрано программ: {count}",
+        0 => EasyWin.Core.Localization.DeploymentStrings.Get("Ui70"),
+        1 => EasyWin.Core.Localization.DeploymentStrings.Get("Ui71"),
+        var count => EasyWin.Core.Localization.DeploymentStrings.Format("AppsCount", count),
     };
 
     public string IsoPath
@@ -152,6 +216,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (SetProperty(ref _selectedLanguage, value))
             {
+                Localization.LocalizedText.Instance.SetLanguage(value == "English" ? "en-US" : "ru-RU");
+                foreach (var item in Checks) item.RefreshLocalization();
+                foreach (var item in Stages) item.RefreshLocalization();
+                foreach (var item in Applications) item.RefreshLocalization();
+                var dependencies = Prerequisites.ToArray();
+                Prerequisites.Clear();
+                foreach (var item in dependencies) Prerequisites.Add(item);
+                System.Windows.Data.CollectionViewSource.GetDefaultView(Profiles).Refresh();
+                System.Windows.Data.CollectionViewSource.GetDefaultView(DriverModes).Refresh();
+                OnPropertyChanged(string.Empty);
                 InvalidateChecks();
             }
         }
@@ -273,15 +347,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    MarkCheckFailed("image", $"Не удалось автоматически открыть ISO: {exception.Message}");
-                    BlockingMessage = "Автоматическое чтение ISO завершилось ошибкой. Выберите образ вручную.";
+                    MarkCheckFailed("image", EasyWin.Core.Localization.DeploymentStrings.Format("AutoIsoError", exception.Message));
+                    BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui72");
                 }
             }
         }
         catch (Exception exception)
         {
-            MarkCheckFailed("environment", $"Не удалось получить сведения о системе: {exception.Message}");
-            BlockingMessage = "Обнаружение системы завершилось ошибкой.";
+            MarkCheckFailed("environment", EasyWin.Core.Localization.DeploymentStrings.Format("DiscoveryError", exception.Message));
+            BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui73");
         }
         finally
         {
@@ -343,13 +417,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         if (Editions.Count == 0)
         {
-            MarkCheckFailed("image", "В ISO не найден install.wim или install.esd с поддерживаемой редакцией.");
-            BlockingMessage = "В выбранном ISO не найдена поддерживаемая редакция Windows.";
+            MarkCheckFailed("image", EasyWin.Core.Localization.DeploymentStrings.Get("Ui74"));
+            BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui75");
         }
         else
         {
-            SetCheck("image", UiCheckStatus.Pass, $"Найдено редакций: {Editions.Count}. Выбрана {SelectedEdition!.DisplayName}.");
-            BlockingMessage = $"Выбрана {SelectedEdition.DisplayName}. Запустите проверку готовности.";
+            SetCheck("image", UiCheckStatus.Pass, EasyWin.Core.Localization.DeploymentStrings.Format("EditionsFound", Editions.Count, SelectedEdition!.DisplayName));
+            BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Format("EditionSelected", SelectedEdition.DisplayName);
         }
     }
 
@@ -381,7 +455,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         if (!TryCreateRequest(out var request))
         {
-            BlockingMessage = "Заполните образ, редакцию, профиль, язык и целевой диск.";
+            BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui76");
             return;
         }
 
@@ -392,7 +466,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             foreach (var check in Checks)
             {
                 check.Status = UiCheckStatus.Pending;
-                check.Message = "Проверяется…";
+                check.Message = EasyWin.Core.Localization.DeploymentStrings.Get("Ui77");
             }
 
             var results = await _workflow.PreflightAsync(request, cancellationToken).ConfigureAwait(true);
@@ -405,7 +479,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Stages[0].Status = failed.Length == 0 ? UiStageStatus.Complete : UiStageStatus.Failed;
             BlockingMessage = failed.Length == 0
                 ? string.Empty
-                : $"Критические проверки не пройдены: {string.Join(", ", failed.Select(item => item.Name))}.";
+                : EasyWin.Core.Localization.DeploymentStrings.Format("CriticalChecks", string.Join(", ", failed.Select(item => item.Name)));
         }
         finally
         {
@@ -449,7 +523,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
 
             _interaction.ShowInformation(
-                DryRun ? "DryRun завершён" : "Подготовка завершена",
+                DryRun ? EasyWin.Core.Localization.DeploymentStrings.Get("Ui78") : EasyWin.Core.Localization.DeploymentStrings.Get("Ui79"),
                 result.Message);
         }
         catch
@@ -526,7 +600,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             SelectedAdditionalDisks,
             Applications.Where(item => item.IsSelected).Select(item => item.Id).ToArray(),
             SelectedDriverMode.Id,
-            DryRun, SelectedStagingDisk);
+            DryRun, SelectedStagingDisk, SelectedStagingVolume?.Volume, AdkRoot);
         return true;
     }
 
@@ -575,33 +649,33 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void AddInitialChecks()
     {
-        Checks.Add(new CheckDisplayItem("administrator", "Права администратора", true));
-        Checks.Add(new CheckDisplayItem("uefi", "Режим UEFI", true));
-        Checks.Add(new CheckDisplayItem("target-disk", "Целевой диск", true));
-        Checks.Add(new CheckDisplayItem("erase-disks", "Диски для очистки", true));
-        Checks.Add(new CheckDisplayItem("staging-disk", "Хранилище установки", true));
-        Checks.Add(new CheckDisplayItem("staging-capacity", "Место в хранилище", true));
-        Checks.Add(new CheckDisplayItem("disk-layout", "Разметка целевого диска", true));
+        Checks.Add(new CheckDisplayItem("administrator", EasyWin.Core.Localization.DeploymentStrings.Get("Ui80"), true));
+        Checks.Add(new CheckDisplayItem("uefi", EasyWin.Core.Localization.DeploymentStrings.Get("Ui81"), true));
+        Checks.Add(new CheckDisplayItem("target-disk", EasyWin.Core.Localization.DeploymentStrings.Get("Ui17"), true));
+        Checks.Add(new CheckDisplayItem("erase-disks", EasyWin.Core.Localization.DeploymentStrings.Get("Ui82"), true));
+        Checks.Add(new CheckDisplayItem("staging-disk", EasyWin.Core.Localization.DeploymentStrings.Get("Ui20"), true));
+        Checks.Add(new CheckDisplayItem("staging-capacity", EasyWin.Core.Localization.DeploymentStrings.Get("Ui83"), true));
+        Checks.Add(new CheckDisplayItem("disk-layout", EasyWin.Core.Localization.DeploymentStrings.Get("Ui84"), true));
         Checks.Add(new CheckDisplayItem("bitlocker", "BitLocker", true));
-        Checks.Add(new CheckDisplayItem("image", "Образ Windows", true));
-        Checks.Add(new CheckDisplayItem("space", "Свободное место", true));
-        Checks.Add(new CheckDisplayItem("power", "Питание", true));
-        Checks.Add(new CheckDisplayItem("staging", "Deployment-среда", true));
-        Checks.Add(new CheckDisplayItem("hashes", "Целостность файлов", true));
+        Checks.Add(new CheckDisplayItem("image", EasyWin.Core.Localization.DeploymentStrings.Get("Ui6"), true));
+        Checks.Add(new CheckDisplayItem("space", EasyWin.Core.Localization.DeploymentStrings.Get("Ui85"), true));
+        Checks.Add(new CheckDisplayItem("power", EasyWin.Core.Localization.DeploymentStrings.Get("Ui86"), true));
+        Checks.Add(new CheckDisplayItem("staging", EasyWin.Core.Localization.DeploymentStrings.Get("Ui87"), true));
+        Checks.Add(new CheckDisplayItem("hashes", EasyWin.Core.Localization.DeploymentStrings.Get("Ui88"), true));
     }
 
     private void UpdateDiscoveryChecks()
     {
         if (Disks.Count == 0)
         {
-            MarkCheckFailed("target-disk", "Подходящие локальные диски не найдены.");
+            MarkCheckFailed("target-disk", EasyWin.Core.Localization.DeploymentStrings.Get("Ui89"));
         }
         else
         {
-            SetCheck("target-disk", UiCheckStatus.Pending, "Выберите диск и запустите проверку.");
+            SetCheck("target-disk", UiCheckStatus.Pending, EasyWin.Core.Localization.DeploymentStrings.Get("Ui90"));
         }
 
-        BlockingMessage = "Выберите ISO и запустите проверку готовности.";
+        BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui91");
     }
 
     private void InvalidateChecks()
@@ -611,7 +685,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (check.Status != UiCheckStatus.Fail || check.Id == "image")
             {
                 check.Status = UiCheckStatus.Pending;
-                check.Message = "Требуется проверка";
+                check.Message = EasyWin.Core.Localization.DeploymentStrings.Get("Ui92");
             }
         }
 
@@ -620,7 +694,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             stage.Status = UiStageStatus.Pending;
         }
 
-        BlockingMessage = "Выполните проверку готовности после изменения параметров.";
+        BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("Ui93");
         RefreshCommandState();
     }
 
@@ -651,12 +725,24 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         BrowseIsoCommand.NotifyCanExecuteChanged();
         RunChecksCommand.NotifyCanExecuteChanged();
         ReinstallCommand.NotifyCanExecuteChanged();
+        RefreshPrerequisitesCommand?.NotifyCanExecuteChanged();
+        BrowseAdkCommand?.NotifyCanExecuteChanged();
+        OpenAdkDownloadCommand?.NotifyCanExecuteChanged();
+        CopyErrorCommand?.NotifyCanExecuteChanged();
     }
 
     private void HandleError(Exception exception)
     {
-        BlockingMessage = exception.Message;
-        _interaction.ShowError("EasyWin", exception.Message);
+        string code = exception is EasyWin.Deployment.Safety.DeploymentSafetyException safety ? safety.Code : "desktop.failed";
+        string logRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "EasyWin", "Logs");
+        string logPath = Path.Combine(logRoot, "desktop-errors.log");
+        string stage = string.IsNullOrWhiteSpace(CurrentProgress.Stage) ? "Desktop" : CurrentProgress.Stage;
+        _lastError = $"{DateTimeOffset.UtcNow:O}\nStage: {stage}\nCode: {code}\nLog: {logPath}\n{exception}";
+        try { Directory.CreateDirectory(logRoot); File.AppendAllText(logPath, _lastError + Environment.NewLine); }
+        catch (Exception loggingError) when (loggingError is IOException or UnauthorizedAccessException)
+        { _lastError += "\nLog write failed: " + loggingError.Message; }
+        BlockingMessage = EasyWin.Core.Localization.DeploymentStrings.Get("GenericFailure") + " [" + code + "]";
+        _interaction.ShowError("EasyWin", BlockingMessage + Environment.NewLine + _lastError);
     }
 
     private static void Replace<T>(ObservableCollection<T> target, IEnumerable<T> values)

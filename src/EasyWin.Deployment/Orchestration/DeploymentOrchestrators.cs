@@ -47,6 +47,7 @@ public sealed class DesktopPreparationOrchestrator(
     public async Task<DesktopPreparationResult> PrepareAsync(DesktopPreparationRequest request, IProgress<DeploymentProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        EasyWin.Core.Localization.DeploymentStrings.SetLanguage(request.Plan.Language);
         if (request.Plan.ExecutionMode.IsDryRun() && runner is not RecordingProcessRunner)
             throw new DeploymentSafetyException("dryrun.runner", "Desktop DryRun requires a recording runner.");
         if (!request.Plan.ExecutionMode.IsDryRun() && (!request.Plan.DataLossAcknowledged || !request.Plan.FinalConfirmationAccepted))
@@ -55,8 +56,14 @@ public sealed class DesktopPreparationOrchestrator(
         }
 
         string work = DeploymentGuard.AbsolutePath(request.WorkRoot, "EasyWin work root");
+        bool separateStorage = request.Plan.StagingDisk is not null && !StagingSelection.SameDisk(request.Plan.TargetDisk, request.Plan.StagingDisk);
+        var volumeValidator = new StagingVolumeValidator(disks, new BitLockerService(runner));
+        if (separateStorage && !request.Plan.ExecutionMode.IsDryRun())
+            _ = await volumeValidator.ValidateAsync(request.Plan, request.Plan.RequiredStagingBytes, cancellationToken).ConfigureAwait(false);
+        if (!request.Plan.ExecutionMode.IsDryRun())
+            await StaleDeploymentGuard.ValidateAsync(disks, runner, request.Plan.Language, cancellationToken).ConfigureAwait(false);
         Directory.CreateDirectory(work);
-        progress?.Report(new DeploymentProgress(DeploymentStage.ValidateEnvironment, "Проверка среды", 2));
+        progress?.Report(new DeploymentProgress(DeploymentStage.ValidateEnvironment, EasyWin.Core.Localization.DeploymentStrings.Get("StageValidateEnvironment"), 2));
         long staticPayloadBytes = CalculateStaticPayloadBytes(request);
         if (!request.Plan.ExecutionMode.IsDryRun())
         {
@@ -88,14 +95,22 @@ public sealed class DesktopPreparationOrchestrator(
             EnsureEraseDiskSafe(expected, additional, identities, "desktop");
         }
 
-        progress?.Report(new DeploymentProgress(DeploymentStage.PrepareStaging, "Проверка и сборка WinPE до изменения разметки", 10));
+        progress?.Report(new DeploymentProgress(DeploymentStage.PrepareStaging, EasyWin.Core.Localization.DeploymentStrings.Get("StagePrepareStaging"), 10));
         string winPeWork = Path.Combine(work, "winpe-work");
         string winPeOut = Path.Combine(work, "winpe-media");
+        string? exportedDrivers = null;
+        IReadOnlyList<string> exportedInfs = [];
+        if (!request.Plan.ExecutionMode.IsDryRun() && request.Plan.DriverSelectionMode == DriverSelectionMode.Automatic)
+        {
+            exportedDrivers = Path.Combine(work, "ExportedDrivers");
+            exportedInfs = await new DriverBackupService(runner).ExportAsync(exportedDrivers, cancellationToken).ConfigureAwait(false);
+            staticPayloadBytes = checked(staticPayloadBytes + DirectoryBytes(exportedDrivers));
+        }
         WinPeBuildResult built = await winPe.BuildAsync(new WinPeBuildRequest(
             request.AdkWinPeRoot, "amd64", winPeWork, winPeOut, request.WinPePayloadRoot,
-            ["WinPE-WMI", "WinPE-NetFX", "WinPE-Scripting", "WinPE-PowerShell", "WinPE-StorageWMI"], []), request.Plan.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            ["WinPE-WMI", "WinPE-NetFX", "WinPE-Scripting", "WinPE-PowerShell", "WinPE-StorageWMI"], exportedInfs, request.Plan.PlanId), request.Plan.ExecutionMode, cancellationToken).ConfigureAwait(false);
 
-        progress?.Report(new DeploymentProgress(DeploymentStage.PrepareStaging, "Создание локального deployment-раздела", 20));
+        progress?.Report(new DeploymentProgress(DeploymentStage.PrepareStaging, EasyWin.Core.Localization.DeploymentStrings.Get("StagePrepareStaging"), 20));
         long requestedSize = Math.Max(
             6L * 1024 * 1024 * 1024,
             checked(new FileInfo(request.ImagePath).Length + staticPayloadBytes + DirectoryBytes(built.MediaRoot) + 2L * 1024 * 1024 * 1024));
@@ -106,7 +121,8 @@ public sealed class DesktopPreparationOrchestrator(
         if (request.Plan.StagingDisk is not null && !StagingSelection.SameDisk(request.Plan.TargetDisk, request.Plan.StagingDisk))
         {
             var storage = await StagingSelection.ResolveAsync(disks, request.Plan.StagingDisk, cancellationToken).ConfigureAwait(false);
-            var volume = StagingSelection.SeparateVolume(storage, requestedSize, request.Plan.StagingVolumeId);
+            var volume = request.Plan.ExecutionMode.IsDryRun() ? StagingSelection.SeparateVolume(storage, requestedSize, request.Plan.StagingVolumeId)
+                : await volumeValidator.ValidateAsync(request.Plan, requestedSize, cancellationToken).ConfigureAwait(false);
             string folder = $"EasyWin-Deployment/{request.Plan.PlanId:N}";
             string volumeRoot = volume.DriveLetter + ":\\";
             if (!request.Plan.ExecutionMode.IsDryRun())
@@ -121,18 +137,20 @@ public sealed class DesktopPreparationOrchestrator(
             var acl = await runner.RunAsync(new CommandSpec("icacls.exe", [folderRoot, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"], requiresElevation: true), cancellationToken).ConfigureAwait(false);
             CommandFailureException.ThrowIfFailed("Protect deployment folder", acl);
             partition = new StagingPartitionIdentity { Disk = storage.Identity, Mode = StagingMode.SeparateDiskFolder,
+                RequiredFreeBytes = requestedSize,
                 FolderRelativePath = folder, RootPath = folderRoot, GptPartitionId = volume.GptPartitionId,
                 PartitionNumber = volume.PartitionNumber, OffsetBytes = volume.OffsetBytes, SizeBytes = volume.SizeBytes };
         }
         else
         {
-            PartitionInfo source = LocalStagingPartitionService.SelectShrinkSource(current, requestedSize);
-            var stageRequest = new StagingPartitionRequest(current.Identity.DiskNumber, source.DriveLetter![0], request.StagingDriveLetter, requestedSize);
+            var extent = UnallocatedStaging.Select(current, requestedSize);
+            PartitionInfo? source = extent is null ? LocalStagingPartitionService.SelectShrinkSource(current, requestedSize) : null;
+            var stageRequest = new StagingPartitionRequest(current.Identity.DiskNumber, source?.DriveLetter?[0] ?? 'C', request.StagingDriveLetter, requestedSize, UnallocatedOffsetBytes: extent?.OffsetBytes);
             partition = await localStaging.CreateAsync(current.Identity, stageRequest, work, request.Plan.ExecutionMode, cancellationToken).ConfigureAwait(false);
         }
 
-        progress?.Report(new DeploymentProgress(DeploymentStage.PrepareBoot, "Копирование и проверка staged-файлов", 35));
-        (DeploymentManifest manifest, string manifestPath) = await staging.BuildAsync(new StagingBuildRequest(request.Plan, partition, request.ImagePath, built.MediaRoot, request.PostInstallPayloadRoot, request.ConfigurationRoot, PayloadRoot: request.PayloadRoot), cancellationToken).ConfigureAwait(false);
+        progress?.Report(new DeploymentProgress(DeploymentStage.PrepareBoot, EasyWin.Core.Localization.DeploymentStrings.Get("StagePrepareBoot"), 35));
+        (DeploymentManifest manifest, string manifestPath) = await staging.BuildAsync(new StagingBuildRequest(request.Plan, partition, request.ImagePath, built.MediaRoot, request.PostInstallPayloadRoot, request.ConfigurationRoot, PayloadRoot: request.PayloadRoot, ExportedDriversRoot: exportedDrivers), cancellationToken).ConfigureAwait(false);
         string root = partition.RootPath;
         string backup = Path.Combine(root, "Boot", "bcd.backup");
         var checkpoints = new DeploymentCheckpointService(manifests);
@@ -140,6 +158,8 @@ public sealed class DesktopPreparationOrchestrator(
         manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PrepareBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
         try
         {
+            if (separateStorage && !request.Plan.ExecutionMode.IsDryRun())
+                _ = await volumeValidator.ValidateAsync(request.Plan, 0, cancellationToken).ConfigureAwait(false);
             TemporaryBootEntry entry = await bcd.ArmOneTimeWinPeAsync(new TemporaryBootRequest(
                 backup,
                 Path.Combine(root, manifest.Boot.WinPeWimRelativePath.Replace('/', Path.DirectorySeparatorChar)),
@@ -176,7 +196,9 @@ public sealed class DesktopPreparationOrchestrator(
                 throw new DeploymentSafetyException("staging.mapping.changed", "Staging mount changed before reboot.");
             foreach (var erase in manifest.AdditionalDisksToErase)
                 EnsureEraseDiskSafe(erase, await StagingSelection.ResolveAsync(disks, erase, cancellationToken).ConfigureAwait(false), identities, "beforeboot");
-            progress?.Report(new DeploymentProgress(DeploymentStage.AwaitingWinPeBoot, request.Plan.ExecutionMode.IsDryRun() ? "DryRun: перезагрузка WinPE смоделирована" : "Перезагрузка в WinPE", 45));
+            progress?.Report(new DeploymentProgress(DeploymentStage.AwaitingWinPeBoot, EasyWin.Core.Localization.DeploymentStrings.Get("StageAwaitingWinPeBoot"), 45));
+            if (separateStorage && !request.Plan.ExecutionMode.IsDryRun())
+                _ = await volumeValidator.ValidateAsync(request.Plan, 0, cancellationToken).ConfigureAwait(false);
 
             if (!request.Plan.ExecutionMode.IsDryRun())
             {
@@ -273,8 +295,19 @@ public sealed class WinPeDeploymentOrchestrator(
         var checkpoints = new DeploymentCheckpointService(manifests);
         try
         {
-            progress?.Report(new DeploymentProgress(DeploymentStage.ValidateManifest, "Проверка manifest и SHA-256", 46));
+            progress?.Report(new DeploymentProgress(DeploymentStage.ValidateManifest, EasyWin.Core.Localization.DeploymentStrings.Get("StageValidateManifest"), 46));
             manifest = await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+            EasyWin.Core.Localization.DeploymentStrings.SetLanguage(manifest.Language);
+            // A reboot must never implicitly replay partition deletion or formatting.
+            // Recovery of an interrupted destructive stage requires a separate verified plan.
+            if (manifest.State.DestructiveWorkStarted ||
+                manifest.State.CompletedStages.Any(stage => stage >= DeploymentStage.PrepareDisk && stage <= DeploymentStage.Completed) ||
+                manifest.State.CurrentStage is >= DeploymentStage.PrepareDisk and <= DeploymentStage.Completed ||
+                manifest.State.LastError?.Stage is >= DeploymentStage.PrepareDisk and <= DeploymentStage.Completed)
+            {
+                manifest = manifest with { State = manifest.State with { DestructiveWorkStarted = true } };
+                throw new DeploymentSafetyException("winpe.replay.blocked", "A destructive deployment was already started. Automatic replay is blocked; preserve deployment storage and use the recovery procedure.");
+            }
             if (manifest.ExecutionMode.IsDryRun() && runner is not RecordingProcessRunner)
                 throw new DeploymentSafetyException("dryrun.runner", "WinPE DryRun requires a recording runner.");
             if (!manifest.ExecutionMode.IsDryRun())
@@ -353,8 +386,14 @@ public sealed class WinPeDeploymentOrchestrator(
             }
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ValidateTargetDisk, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
 
+            disk = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+            storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+            stage = StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
+            await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+            new DeploymentSafetyValidator(identities).ValidateBeforeDestructive(manifest, disk, image, stagingDisk: storage);
             var prepare = new DiskPreparationRequest(disk.Identity.DiskNumber, stage.GptPartitionId, stage.PartitionNumber, stage.OffsetBytes, stage.SizeBytes);
-            progress?.Report(new DeploymentProgress(DeploymentStage.PrepareDisk, "Подготовка GPT с защитой staging", 52));
+            progress?.Report(new DeploymentProgress(DeploymentStage.PrepareDisk, EasyWin.Core.Localization.DeploymentStrings.Get("StagePrepareDisk"), 52));
+            manifest = manifest with { State = manifest.State with { DestructiveWorkStarted = true } };
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
                 await diskPart.PrepareSeparateTargetAsync(disk, storage, stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
@@ -362,11 +401,21 @@ public sealed class WinPeDeploymentOrchestrator(
                 await diskPart.ExecuteAsync(scripts.PrepareTargetPreservingDeployment(prepare, disk.Partitions), stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PrepareDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
 
-            progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, "Применение Windows через DISM", 60));
+            progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, EasyWin.Core.Localization.DeploymentStrings.Get("StageApplyImage"), 60));
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ApplyImage, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
-            await images.ApplyAsync(new ApplyImageRequest(image, manifest.Image.ImageIndex, "W:\\"), new Progress<int>(percent => progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, $"Установка Windows {percent}%", 55 + percent * .25))), cancellationToken).ConfigureAwait(false);
+            disk = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+            storage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+            StagingSelection.ValidatePartition(manifest.StagingPartition, storage);
+            await manifests.LoadAndValidateAsync(manifestPath, true, cancellationToken).ConfigureAwait(false);
+            if (!manifest.ExecutionMode.IsDryRun() && !disk.Partitions.Any(p => p.DriveLetter == "W" && p.FileSystem == "NTFS"))
+                throw new DeploymentSafetyException("apply.target.mapping", "W: does not resolve to the confirmed Windows target.");
+            await images.ApplyAsync(new ApplyImageRequest(image, manifest.Image.ImageIndex, "W:\\"), new Progress<int>(percent => progress?.Report(new DeploymentProgress(DeploymentStage.ApplyImage, EasyWin.Core.Localization.DeploymentStrings.Get("StageApplyImage") + $" {percent}%", 55 + percent * .25))), cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ApplyImage, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
-            progress?.Report(new DeploymentProgress(DeploymentStage.ConfigureBoot, "Создание UEFI boot files", 82));
+            var stagedDrivers = manifest.FileInventory.Where(f => f.RelativePath.StartsWith("ExportedDrivers/", StringComparison.OrdinalIgnoreCase) && f.RelativePath.EndsWith(".inf", StringComparison.OrdinalIgnoreCase))
+                .Select(f => PathValidator.ResolveUnderRoot(stageRoot, f.RelativePath, true)).ToArray();
+            if (stagedDrivers.Length > 0)
+                await images.AddDriversAsync(new DriverInjectionRequest("W:\\", stagedDrivers), cancellationToken).ConfigureAwait(false);
+            progress?.Report(new DeploymentProgress(DeploymentStage.ConfigureBoot, EasyWin.Core.Localization.DeploymentStrings.Get("StageConfigureBoot"), 82));
             manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.ConfigureBoot, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             await bootFiles.ConfigureAsync(new BootFilesRequest("W:\\", "S:\\", Locale: manifest.Language), manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.ConfigureBoot, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
@@ -376,10 +425,17 @@ public sealed class WinPeDeploymentOrchestrator(
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.GenerateUnattend, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             foreach (PhysicalDiskSnapshot additional in additionalDisks)
             {
-                progress?.Report(new DeploymentProgress(DeploymentStage.PartitionDisk, $"Очистка дополнительного диска {additional.Identity.DiskNumber}", 86));
+                var freshAdditional = await StagingSelection.ResolveAsync(disks, additional.Identity, cancellationToken).ConfigureAwait(false);
+                StagingSelection.Writable(freshAdditional);
+                var freshTarget = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+                var freshStorage = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
+                StagingSelection.ValidatePartition(manifest.StagingPartition, freshStorage);
+                if (freshAdditional.Identity.DiskNumber == freshTarget.Identity.DiskNumber || freshAdditional.Identity.DiskNumber == freshStorage.Identity.DiskNumber)
+                    throw new DeploymentSafetyException("erase.overlap", "Erase disk overlaps target or deployment storage.");
+                progress?.Report(new DeploymentProgress(DeploymentStage.PartitionDisk, EasyWin.Core.Localization.DeploymentStrings.Get("StagePartitionDisk"), 86));
                 manifest = await checkpoints.StartAsync(manifest, manifestPath, DeploymentStage.PartitionDisk, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
                 await diskPart.ExecuteAsync(
-                    scripts.EraseAdditionalDiskAndCreateDataVolume(new AdditionalDiskEraseRequest(additional.Identity.DiskNumber), additional.Partitions),
+                    scripts.EraseAdditionalDiskAndCreateDataVolume(new AdditionalDiskEraseRequest(freshAdditional.Identity.DiskNumber), freshAdditional.Partitions),
                     stageRoot,
                     manifest.ExecutionMode,
                     cancellationToken).ConfigureAwait(false);
@@ -403,7 +459,7 @@ public sealed class WinPeDeploymentOrchestrator(
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.PreparePostInstall, recoveryRequired: true, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, manifestPath, DeploymentStage.AwaitingFirstBoot, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             CopyManifestToTarget(manifestPath, manifest.ExecutionMode);
-            progress?.Report(new DeploymentProgress(DeploymentStage.AwaitingFirstBoot, "Первый запуск Windows", 88));
+            progress?.Report(new DeploymentProgress(DeploymentStage.AwaitingFirstBoot, EasyWin.Core.Localization.DeploymentStrings.Get("StageAwaitingFirstBoot"), 88));
             if (!manifest.ExecutionMode.IsDryRun())
             {
                 ProcessResult reboot = await runner.RunAsync(new CommandSpec("wpeutil.exe", ["reboot"], requiresElevation: true), cancellationToken).ConfigureAwait(false);
@@ -438,6 +494,8 @@ public sealed class WinPeDeploymentOrchestrator(
 
         string target = "W:\\ProgramData\\EasyWin";
         CopyDirectory(Path.Combine(stageRoot, "PostInstall"), target);
+        await File.WriteAllTextAsync(Path.Combine(target, "PostInstallTask.xml"), PostInstallBootstrap.TaskXml(), cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(target, "RegisterPostInstall.cmd"), PostInstallBootstrap.RegistrationScript, cancellationToken).ConfigureAwait(false);
         File.Copy(manifestPath, Path.Combine(target, "manifest.json"), true);
         string scriptsRoot = "W:\\Windows\\Setup\\Scripts";
         Directory.CreateDirectory(scriptsRoot);
@@ -486,14 +544,24 @@ public sealed class PostInstallOrchestrator(
             var candidate = await json.DeserializeFileAsync<DeploymentManifest>(copiedManifestPath, cancellationToken).ConfigureAwait(false);
             await manifests.ValidateAsync(candidate, Path.GetDirectoryName(copiedManifestPath)!, false, cancellationToken).ConfigureAwait(false);
             manifest = candidate;
+            EasyWin.Core.Localization.DeploymentStrings.SetLanguage(manifest.Language);
             if (manifest.State.CompletedStages.Contains(DeploymentStage.Completed))
             {
-                progress?.Report(new DeploymentProgress(DeploymentStage.Completed, "PostInstall уже завершён", 100));
+                progress?.Report(new DeploymentProgress(DeploymentStage.Completed, EasyWin.Core.Localization.DeploymentStrings.Get("StageCompleted"), 100));
                 return;
             }
 
             manifest = await checkpoints.BeginAttemptAsync(manifest, copiedManifestPath, cancellationToken).ConfigureAwait(false);
-            _ = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+            var bootTarget = await StagingSelection.ResolveAsync(disks, manifest.TargetDisk, cancellationToken).ConfigureAwait(false);
+            if (!manifest.ExecutionMode.IsDryRun()) FirstBootGuard.ValidateCurrent(manifest, bootTarget);
+            manifest = manifest with { State = manifest.State with { FirstBootValidated = true } };
+            await manifests.SaveAsync(manifest, copiedManifestPath, cancellationToken).ConfigureAwait(false);
+            manifest = manifests.Seal(manifest);
+            if (manifest.State.CompletedStages.Contains(DeploymentStage.CleanupStaging))
+            {
+                await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.Completed, false, cancellationToken).ConfigureAwait(false);
+                return;
+            }
             PhysicalDiskSnapshot disk = await StagingSelection.ResolveAsync(disks, manifest.StagingPartition.Disk, cancellationToken).ConfigureAwait(false);
             StagingSelection.ValidatePartition(manifest.StagingPartition, disk);
             PartitionInfo stage = disk.Partitions.SingleOrDefault(partition => partition.GptPartitionId == manifest.StagingPartition.GptPartitionId)
@@ -516,7 +584,8 @@ public sealed class PostInstallOrchestrator(
                 stageRoot = $"{letter}:\\";
             }
 
-            if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
+            if (manifest.ExecutionMode.IsDryRun()) stageRoot = manifest.StagingPartition.RootPath;
+            else if (manifest.StagingPartition.Mode == StagingMode.SeparateDiskFolder)
                 stageRoot = PathValidator.ResolveUnderRoot(stageRoot, manifest.StagingPartition.FolderRelativePath, true);
             await manifests.ValidateAsync(manifest, stageRoot, true, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.ValidateManifest, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
@@ -530,29 +599,72 @@ public sealed class PostInstallOrchestrator(
             InstallationProfile profile = await catalogs.LoadProfileAsync(Path.Combine(stageRoot, "Config", "profiles", $"{manifest.ProfileId}.json"), cancellationToken).ConfigureAwait(false);
             IReadOnlySet<string> hardware = await drivers.DetectHardwareIdsAsync(manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             IEnumerable<DriverPackage> selectedDrivers = manifest.DriverSelectionMode == DriverSelectionMode.None ? [] : driverCatalog.Packages.Where(driver => manifest.DriverSelectionMode == DriverSelectionMode.Automatic || manifest.DriverIds.Contains(driver.Id, StringComparer.OrdinalIgnoreCase));
-            progress?.Report(new DeploymentProgress(DeploymentStage.InstallDrivers, "Установка совместимых драйверов", 90));
+            if (!manifest.State.CompletedStages.Contains(DeploymentStage.InstallDrivers))
+            {
+            progress?.Report(new DeploymentProgress(DeploymentStage.InstallDrivers, EasyWin.Core.Localization.DeploymentStrings.Get("StageInstallDrivers"), 90));
             manifest = await checkpoints.StartAsync(manifest, copiedManifestPath, DeploymentStage.InstallDrivers, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            await drivers.InstallAsync(selectedDrivers, hardware, stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            if (!manifest.ExecutionMode.IsDryRun() && manifest.DriverSelectionMode == DriverSelectionMode.Automatic && Directory.Exists(Path.Combine(stageRoot, "ExportedDrivers")))
+                await drivers.InstallExportedAsync(Path.Combine(stageRoot, "ExportedDrivers"), cancellationToken).ConfigureAwait(false);
+            else
+                await drivers.InstallAsync(selectedDrivers, hardware, stageRoot, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.InstallDrivers, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            progress?.Report(new DeploymentProgress(DeploymentStage.InstallApplications, "Установка приложений", 93));
+            }
+            if (!manifest.State.CompletedStages.Contains(DeploymentStage.InstallApplications))
+            {
+            progress?.Report(new DeploymentProgress(DeploymentStage.InstallApplications, EasyWin.Core.Localization.DeploymentStrings.Get("StageInstallApplications"), 93));
             manifest = await checkpoints.StartAsync(manifest, copiedManifestPath, DeploymentStage.InstallApplications, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            await apps.InstallAsync(appCatalog.Applications.Where(app => manifest.ApplicationIds.Contains(app.Id, StringComparer.OrdinalIgnoreCase)), stageRoot, manifest.ExecutionMode, hardware, cancellationToken).ConfigureAwait(false);
+            foreach (var app in appCatalog.Applications.Where(app => manifest.ApplicationIds.Contains(app.Id, StringComparer.OrdinalIgnoreCase)))
+            {
+                if (manifest.State.CompletedApplicationIds.Contains(app.Id, StringComparer.OrdinalIgnoreCase) ||
+                    manifest.State.FailedApplicationIds.Contains(app.Id, StringComparer.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    await apps.InstallAsync([app], stageRoot, manifest.ExecutionMode, hardware, cancellationToken).ConfigureAwait(false);
+                    manifest = manifest with { State = manifest.State with { CompletedApplicationIds = manifest.State.CompletedApplicationIds.Append(app.Id).ToArray() } };
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    manifest = manifest with { State = manifest.State with {
+                        FailedApplicationIds = manifest.State.FailedApplicationIds.Append(app.Id).ToArray(),
+                        OptionalWarnings = manifest.State.OptionalWarnings.Append(app.Id + ": " + e.Message).ToArray() } };
+                }
+                // Commit each result before starting the next installer. A cancelled installer
+                // remains pending; generic installers cannot guarantee exactly-once execution.
+                await manifests.SaveAsync(manifest, copiedManifestPath, cancellationToken).ConfigureAwait(false);
+                manifest = manifests.Seal(manifest);
+            }
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.InstallApplications, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            progress?.Report(new DeploymentProgress(DeploymentStage.ApplyProfile, "Применение профиля", 96));
+            }
+            if (!manifest.State.CompletedStages.Contains(DeploymentStage.ApplyProfile))
+            {
+            progress?.Report(new DeploymentProgress(DeploymentStage.ApplyProfile, EasyWin.Core.Localization.DeploymentStrings.Get("StageApplyProfile"), 96));
             manifest = await checkpoints.StartAsync(manifest, copiedManifestPath, DeploymentStage.ApplyProfile, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             await profiles.ApplyAsync(profile, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.ApplyProfile, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            progress?.Report(new DeploymentProgress(DeploymentStage.ActivateWindows, "Проверка цифровой лицензии и штатная активация Windows", 97));
+            }
+            if (!manifest.State.CompletedStages.Contains(DeploymentStage.ActivateWindows))
+            {
+            progress?.Report(new DeploymentProgress(DeploymentStage.ActivateWindows, EasyWin.Core.Localization.DeploymentStrings.Get("StageActivateWindows"), 97));
             manifest = await checkpoints.StartAsync(manifest, copiedManifestPath, DeploymentStage.ActivateWindows, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            WindowsActivationResult activationResult = await activation.TryActivateAsync(manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                WindowsActivationResult activationResult = await activation.TryActivateAsync(manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
+                if (!activationResult.IsActivated)
+                    manifest = manifest with { State = manifest.State with { OptionalWarnings = manifest.State.OptionalWarnings.Append("activation: " + activationResult.Message).ToArray() } };
+                progress?.Report(new DeploymentProgress(DeploymentStage.ActivateWindows, EasyWin.Core.Localization.DeploymentStrings.Get("StageActivateWindows"), 97));
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                manifest = manifest with { State = manifest.State with { OptionalWarnings = manifest.State.OptionalWarnings.Append("activation: " + e.Message).ToArray() } };
+            }
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.ActivateWindows, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            progress?.Report(new DeploymentProgress(DeploymentStage.ActivateWindows, activationResult.Message, 97));
-            progress?.Report(new DeploymentProgress(DeploymentStage.CleanupStaging, "Удаление временного раздела и настройка WinRE", 98));
+            }
+            progress?.Report(new DeploymentProgress(DeploymentStage.CleanupStaging, EasyWin.Core.Localization.DeploymentStrings.Get("StageCleanupStaging"), 98));
             manifest = await checkpoints.StartAsync(manifest, copiedManifestPath, DeploymentStage.CleanupStaging, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             await cleanup.CleanupAsync(manifest, Path.GetDirectoryName(copiedManifestPath)!, manifest.ExecutionMode, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.CleanupStaging, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
             manifest = await checkpoints.CompleteAsync(manifest, copiedManifestPath, DeploymentStage.Completed, recoveryRequired: false, cancellationToken).ConfigureAwait(false);
-            progress?.Report(new DeploymentProgress(DeploymentStage.Completed, "Готово", 100));
+            progress?.Report(new DeploymentProgress(DeploymentStage.Completed, EasyWin.Core.Localization.DeploymentStrings.Get("StageCompleted"), 100));
         }
         catch (Exception exception)
         {

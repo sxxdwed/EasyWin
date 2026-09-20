@@ -28,16 +28,19 @@ static async Task<int> MainAsync(string[] args)
             string adk = Required(args, "--adk");
             string payload = Required(args, "--payload");
             string output = Required(args, "--output");
+            int planIndex = Array.FindIndex(args, value => value.Equals("--plan-id", StringComparison.OrdinalIgnoreCase));
+            if (planIndex < 0 || planIndex + 1 >= args.Length || !Guid.TryParse(args[planIndex + 1], out Guid planId) || planId == Guid.Empty)
+                throw new ArgumentException("--plan-id must identify the exact deployment plan embedded into WinPE.");
             string work = Value(args, "--workspace") ?? Path.Combine(Path.GetTempPath(), $"EasyWin-WinPE-{Guid.NewGuid():N}");
             var builder = new WinPeMediaBuilder(new ProcessRunner());
             WinPeBuildResult result = await builder.BuildAsync(new WinPeBuildRequest(
                 adk, "amd64", work, output, payload,
-                ["WinPE-WMI", "WinPE-NetFX", "WinPE-Scripting", "WinPE-PowerShell", "WinPE-StorageWMI"], []), ExecutionMode.Live).ConfigureAwait(false);
+                ["WinPE-WMI", "WinPE-NetFX", "WinPE-Scripting", "WinPE-PowerShell", "WinPE-StorageWMI"], [], PlanId: planId), ExecutionMode.Live).ConfigureAwait(false);
             Console.WriteLine($"WinPE: {result.MediaRoot}");
             return 0;
         }
 
-        Console.Error.WriteLine("Usage: EasyWin.Builder --dry-run [--workspace PATH] [--config PATH] | --build-winpe --adk PATH --payload PATH --output PATH");
+        Console.Error.WriteLine("Usage: EasyWin.Builder --dry-run [--workspace PATH] [--config PATH] | --build-winpe --adk PATH --payload PATH --output PATH --plan-id GUID");
         return 64;
     }
     catch (Exception exception)

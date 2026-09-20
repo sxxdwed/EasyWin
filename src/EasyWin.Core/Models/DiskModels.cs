@@ -54,6 +54,7 @@ public sealed record PartitionInfo
 
 public sealed record StagingPartitionIdentity
 {
+    public long RequiredFreeBytes { get; init; }
     public StagingMode Mode { get; init; } = StagingMode.SameDiskPartition;
 
     public string FolderRelativePath { get; init; } = string.Empty;

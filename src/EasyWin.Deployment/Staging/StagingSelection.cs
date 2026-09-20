@@ -67,7 +67,7 @@ public static class StagingSelection
         {
             if (storage is null) throw new InvalidDataException("Staging storage is unavailable.");
             if (separate) _ = SeparateVolume(storage, bytes, plan.StagingVolumeId);
-            else _ = LocalStagingPartitionService.SelectShrinkSource(storage, bytes);
+            else if (UnallocatedStaging.Select(storage, bytes) is null) _ = LocalStagingPartitionService.SelectShrinkSource(storage, bytes);
             return Task.CompletedTask;
         });
         await Check("erase-disks", async () =>

@@ -6,6 +6,7 @@ namespace EasyWin.Desktop.Mvvm;
 public abstract class ObservableObject : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
+    public void RefreshLocalization() => OnPropertyChanged(string.Empty);
 
     protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

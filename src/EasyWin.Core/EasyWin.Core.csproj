@@ -2,4 +2,16 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
+  <Target Name="ValidateLocalizationResources" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)/Resources/Strings.resx" Query="/root/data/@name"><Output TaskParameter="Result" ItemName="EnglishKeys" /></XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)/Resources/Strings.ru-RU.resx" Query="/root/data/@name"><Output TaskParameter="Result" ItemName="RussianKeys" /></XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)/Resources/Strings.resx" Query="/root/data[not(normalize-space(value))]/@name"><Output TaskParameter="Result" ItemName="EmptyEnglish" /></XmlPeek>
+    <XmlPeek XmlInputPath="$(MSBuildProjectDirectory)/Resources/Strings.ru-RU.resx" Query="/root/data[not(normalize-space(value))]/@name"><Output TaskParameter="Result" ItemName="EmptyRussian" /></XmlPeek>
+    <ItemGroup>
+      <MissingRussian Include="@(EnglishKeys)" Exclude="@(RussianKeys)" />
+      <MissingEnglish Include="@(RussianKeys)" Exclude="@(EnglishKeys)" />
+      <MissingCritical Include="StorageEncrypted;StorageAvailability;StorageChanged;TargetErased;StoragePreserved;AutoReboot;StaleDeployment;GenericFailure;StageCompleted;StageApplyImage" Exclude="@(EnglishKeys)" />
+    </ItemGroup>
+    <Error Condition="'@(MissingRussian)@(MissingEnglish)@(MissingCritical)@(EmptyEnglish)@(EmptyRussian)' != ''" Text="Missing or empty required localization resources: @(MissingRussian) @(MissingEnglish) @(MissingCritical) @(EmptyEnglish) @(EmptyRussian)" />
+  </Target>
 </Project>

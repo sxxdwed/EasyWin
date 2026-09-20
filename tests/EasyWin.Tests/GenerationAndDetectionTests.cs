@@ -95,7 +95,9 @@ public sealed class GenerationAndDetectionTests
     {
         CommandSpec command = BootFilesCommandFactory.RegisterFirmware(new BootFilesRequest("W:\\", "S:\\", Locale: "ru-RU"));
         Assert.DoesNotContain("/s", command.Arguments, StringComparer.OrdinalIgnoreCase);
-        Assert.Contains("UEFI", command.Arguments, StringComparer.OrdinalIgnoreCase);
+        // /f requires /s; registration inherits the validated UEFI environment and preserves firmware order.
+        Assert.DoesNotContain("/f", command.Arguments, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("/p", command.Arguments, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+<resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+<resheader name="version"><value>2.0</value></resheader>
+<data name="StorageAvailability" xml:space="preserve"><value>Deployment storage availability in WinPE</value></data>
+<data name="StorageEncrypted" xml:space="preserve"><value>The deployment storage is encrypted with BitLocker and will not be accessible from WinPE. Fully decrypt the selected volume or choose different deployment storage.</value></data>
+<data name="StorageChanged" xml:space="preserve"><value>The selected deployment volume changed. Select it again and repeat Preflight.</value></data>
+<data name="StorageSelect" xml:space="preserve"><value>Select an exact deployment volume.</value></data>
+<data name="StorageAvailable" xml:space="preserve"><value>The selected volume is accessible and fully decrypted; BitLocker protection is off.</value></data>
+<data name="GenericFailure" xml:space="preserve"><value>The operation was stopped safely. Review the error code and diagnostic log.</value></data>
+<data name="TargetErased" xml:space="preserve"><value>The Windows target disk will be completely erased.</value></data>
+<data name="StoragePreserved" xml:space="preserve"><value>The selected deployment storage disk will be preserved.</value></data>
+<data name="AutoReboot" xml:space="preserve"><value>The computer will automatically reboot into EasyWin WinPE. BIOS and Boot Menu are not required.</value></data>
+<data name="StaleDeployment" xml:space="preserve"><value>An incomplete EasyWin deployment was detected. Cancel and review recovery options before continuing.</value></data>
+<data name="ExactVolume" xml:space="preserve"><value>Deployment volume (required for separate storage)</value></data>
+<data name="Ui0" xml:space="preserve"><value>Local Windows reinstallation</value></data>
+<data name="Ui1" xml:space="preserve"><value>STAGES</value></data>
+<data name="Ui2" xml:space="preserve"><value>What stays protected</value></data>
+<data name="Ui3" xml:space="preserve"><value>EasyWin uses Windows Boot Manager without bypassing Secure Boot or TPM.</value></data>
+<data name="Ui4" xml:space="preserve"><value>Installation settings</value></data>
+<data name="Ui5" xml:space="preserve"><value>Choose official Windows media, edition and target. Prerequisites are checked before changes.</value></data>
+<data name="Ui6" xml:space="preserve"><value>Windows image</value></data>
+<data name="Ui7" xml:space="preserve"><value>Official ISO with install.wim or install.esd</value></data>
+<data name="Ui8" xml:space="preserve"><value>ISO path</value></data>
+<data name="Ui9" xml:space="preserve"><value>Select ISO</value></data>
+<data name="Ui10" xml:space="preserve"><value>Select Windows ISO</value></data>
+<data name="Ui11" xml:space="preserve"><value>Edition</value></data>
+<data name="Ui12" xml:space="preserve"><value>Windows edition</value></data>
+<data name="Ui13" xml:space="preserve"><value>Language</value></data>
+<data name="Ui14" xml:space="preserve"><value>Windows language</value></data>
+<data name="Ui15" xml:space="preserve"><value>Disks</value></data>
+<data name="Ui16" xml:space="preserve"><value>Install Windows on</value></data>
+<data name="Ui17" xml:space="preserve"><value>Windows target</value></data>
+<data name="Ui18" xml:space="preserve"><value>The Windows target WILL BE ERASED</value></data>
+<data name="Ui19" xml:space="preserve"><value>Separate deployment storage WILL BE PRESERVED. Select the Windows target for protected same-disk staging.</value></data>
+<data name="Ui20" xml:space="preserve"><value>Deployment storage</value></data>
+<data name="Ui21" xml:space="preserve"><value>Exact deployment volume</value></data>
+<data name="Ui22" xml:space="preserve"><value>Exact deployment volume</value></data>
+<data name="Ui23" xml:space="preserve"><value>Additional disk to erase (optional)</value></data>
+<data name="Ui24" xml:space="preserve"><value>Erase additional disk</value></data>
+<data name="Ui25" xml:space="preserve"><value>The Windows target is erased. Any selected additional disk is also repartitioned as one Data volume. Deployment storage is protected until the new Windows installation boots successfully.</value></data>
+<data name="Ui26" xml:space="preserve"><value>Profile and drivers</value></data>
+<data name="Ui27" xml:space="preserve"><value>Profile</value></data>
+<data name="Ui28" xml:space="preserve"><value>Windows profile</value></data>
+<data name="Ui29" xml:space="preserve"><value>Drivers</value></data>
+<data name="Ui30" xml:space="preserve"><value>Driver mode</value></data>
+<data name="Ui31" xml:space="preserve"><value>Windows activation</value></data>
+<data name="Ui32" xml:space="preserve"><value>Uses Windows activation with your existing digital entitlement or compatible OEM license. EasyWin does not include a license or product key.</value></data>
+<data name="Ui33" xml:space="preserve"><value>Applications</value></data>
+<data name="Ui34" xml:space="preserve"><value>Optional applications and vendor utilities. Trusted payloads must pass path and SHA-256 validation.</value></data>
+<data name="Ui35" xml:space="preserve"><value>Preflight</value></data>
+<data name="Ui36" xml:space="preserve"><value>Check again</value></data>
+<data name="Ui37" xml:space="preserve"><value>Preparation progress</value></data>
+<data name="Ui38" xml:space="preserve"><value>Confirm data erasure</value></data>
+<data name="Ui39" xml:space="preserve"><value>You will also need to type the exact Device IDs of all disks selected for erasure.</value></data>
+<data name="Ui40" xml:space="preserve"><value>Reinstall Windows</value></data>
+<data name="Ui41" xml:space="preserve"><value>Confirm selected disks</value></data>
+<data name="Ui42" xml:space="preserve"><value>Final confirmation</value></data>
+<data name="Ui43" xml:space="preserve"><value>Review each disk's role. After reboot, all partitions and data on the listed disks will be erased.</value></data>
+<data name="Ui44" xml:space="preserve"><value>Type the exact phrase below:</value></data>
+<data name="Ui45" xml:space="preserve"><value>Disk confirmation phrase</value></data>
+<data name="Ui46" xml:space="preserve"><value>Cancel</value></data>
+<data name="Ui47" xml:space="preserve"><value>Confirm disks</value></data>
+<data name="Ui48" xml:space="preserve"><value>Select an image and run Preflight.</value></data>
+<data name="Ui49" xml:space="preserve"><value>DryRun · safe simulation</value></data>
+<data name="Ui50" xml:space="preserve"><value>Live mode</value></data>
+<data name="Ui51" xml:space="preserve"><value>Automatically for this computer</value></data>
+<data name="Ui52" xml:space="preserve"><value>Do not install</value></data>
+<data name="Ui53" xml:space="preserve"><value>Validation</value></data>
+<data name="Ui54" xml:space="preserve"><value>Environment, image and disks</value></data>
+<data name="Ui55" xml:space="preserve"><value>Preparation</value></data>
+<data name="Ui56" xml:space="preserve"><value>Local deployment storage</value></data>
+<data name="Ui57" xml:space="preserve"><value>Boot</value></data>
+<data name="Ui58" xml:space="preserve"><value>One-time WinPE entry</value></data>
+<data name="Ui59" xml:space="preserve"><value>Installation</value></data>
+<data name="Ui60" xml:space="preserve"><value>DISM, GPT and BCDBoot</value></data>
+<data name="Ui61" xml:space="preserve"><value>First boot</value></data>
+<data name="Ui62" xml:space="preserve"><value>Drivers, applications and cleanup</value></data>
+<data name="Ui63" xml:space="preserve"><value>Run DryRun</value></data>
+<data name="Ui64" xml:space="preserve"><value>Select an ISO to see the available Windows editions.</value></data>
+<data name="Ui65" xml:space="preserve"><value>Select the Windows target disk.</value></data>
+<data name="Ui66" xml:space="preserve"><value> · Storage: protected partition on the Windows target</value></data>
+<data name="Ui67" xml:space="preserve"><value> · No additional disk will be erased</value></data>
+<data name="Ui68" xml:space="preserve"><value>I understand that all data on the Windows target will be erased</value></data>
+<data name="Ui69" xml:space="preserve"><value>I understand that all data on both selected erase disks will be erased</value></data>
+<data name="Ui70" xml:space="preserve"><value>No optional applications selected</value></data>
+<data name="Ui71" xml:space="preserve"><value>1 application selected</value></data>
+<data name="Ui72" xml:space="preserve"><value>Automatic ISO inspection failed. Select an image manually.</value></data>
+<data name="Ui73" xml:space="preserve"><value>System discovery failed.</value></data>
+<data name="Ui74" xml:space="preserve"><value>No supported install.wim or install.esd edition was found.</value></data>
+<data name="Ui75" xml:space="preserve"><value>The selected ISO has no supported Windows edition.</value></data>
+<data name="Ui76" xml:space="preserve"><value>Select an image, edition, profile, language and target disk.</value></data>
+<data name="Ui77" xml:space="preserve"><value>Checking…</value></data>
+<data name="Ui78" xml:space="preserve"><value>DryRun completed</value></data>
+<data name="Ui79" xml:space="preserve"><value>Preparation completed</value></data>
+<data name="Ui80" xml:space="preserve"><value>Administrator privileges</value></data>
+<data name="Ui81" xml:space="preserve"><value>UEFI mode</value></data>
+<data name="Ui82" xml:space="preserve"><value>Erase disks</value></data>
+<data name="Ui83" xml:space="preserve"><value>Staging capacity</value></data>
+<data name="Ui84" xml:space="preserve"><value>Target layout</value></data>
+<data name="Ui85" xml:space="preserve"><value>Free space</value></data>
+<data name="Ui86" xml:space="preserve"><value>Power</value></data>
+<data name="Ui87" xml:space="preserve"><value>Deployment environment</value></data>
+<data name="Ui88" xml:space="preserve"><value>File integrity</value></data>
+<data name="Ui89" xml:space="preserve"><value>No suitable local disks were found.</value></data>
+<data name="Ui90" xml:space="preserve"><value>Select a disk and run Preflight.</value></data>
+<data name="Ui91" xml:space="preserve"><value>Select an ISO and run Preflight.</value></data>
+<data name="Ui92" xml:space="preserve"><value>Not checked</value></data>
+<data name="Ui93" xml:space="preserve"><value>Run Preflight again after changing settings.</value></data>
+<data name="Ui94" xml:space="preserve"><value>Select an official Windows ISO</value></data>
+<data name="Ui95" xml:space="preserve"><value>Windows image (*.iso)|*.iso</value></data>
+<data name="Ui96" xml:space="preserve"><value>Waiting for validation</value></data>
+<data name="Ui97" xml:space="preserve"><value>Previous EasyWin deployments</value></data>
+<data name="Ui98" xml:space="preserve"><value>Image edition and architecture</value></data>
+<data name="Ui99" xml:space="preserve"><value>ADK / WinPE / PostInstall completeness</value></data>
+<data name="Ui100" xml:space="preserve"><value>Deployment storage availability in WinPE</value></data>
+<data name="Ui101" xml:space="preserve"><value>Standard Windows configuration without component removal.</value></data>
+<data name="Ui102" xml:space="preserve"><value>Removes allowlisted consumer apps, Xbox/Game Bar and Teams. Preserves Update, Defender, Store, Edge and Recovery.</value></data>
+<data name="Ui103" xml:space="preserve"><value>Installer missing — application unavailable</value></data>
+<data name="Ui104" xml:space="preserve"><value>Compatible hardware detected</value></data>
+<data name="Ui105" xml:space="preserve"><value>No compatible hardware — installation disabled</value></data>
+<data name="Ui106" xml:space="preserve"><value>Available for offline installation</value></data>
+<data name="Ui107" xml:space="preserve"><value>Windows target</value></data>
+<data name="Ui108" xml:space="preserve"><value>Deployment disk — preserved</value></data>
+<data name="Ui109" xml:space="preserve"><value>Deployment capacity</value></data>
+<data name="Ui110" xml:space="preserve"><value>Check passed.</value></data>
+<data name="Ui111" xml:space="preserve"><value>Check failed.</value></data>
+<data name="Ui112" xml:space="preserve"><value>Windows ADK + WinPE add-on not found.</value></data>
+<data name="EditionSummary" xml:space="preserve"><value>Will install: {0} · {1}</value></data>
+<data name="TargetSummary" xml:space="preserve"><value>Windows → {0} — WILL BE ERASED</value></data>
+<data name="StorageSummary" xml:space="preserve"><value> · Storage → {0} — WILL BE PRESERVED</value></data>
+<data name="EraseSummary" xml:space="preserve"><value> · Also erase → {0}</value></data>
+<data name="AppsCount" xml:space="preserve"><value>Applications selected: {0}</value></data>
+<data name="AutoIsoError" xml:space="preserve"><value>Automatic ISO inspection failed: {0}</value></data>
+<data name="DiscoveryError" xml:space="preserve"><value>System discovery failed: {0}</value></data>
+<data name="EditionsFound" xml:space="preserve"><value>Editions found: {0}. Selected: {1}.</value></data>
+<data name="EditionSelected" xml:space="preserve"><value>Selected: {0}. Run Preflight.</value></data>
+<data name="CriticalChecks" xml:space="preserve"><value>Critical checks failed: {0}.</value></data>
+<data name="StageValidateEnvironment" xml:space="preserve"><value>Validating environment</value></data>
+<data name="StageValidateManifest" xml:space="preserve"><value>Validating disks and files</value></data>
+<data name="StagePrepareStaging" xml:space="preserve"><value>Preparing local deployment storage and WinPE</value></data>
+<data name="StagePrepareBoot" xml:space="preserve"><value>Validating files and preparing one-time boot</value></data>
+<data name="StageAwaitingWinPeBoot" xml:space="preserve"><value>Preparing automatic WinPE reboot</value></data>
+<data name="StagePrepareDisk" xml:space="preserve"><value>Preparing disk</value></data>
+<data name="StageApplyImage" xml:space="preserve"><value>Installing Windows</value></data>
+<data name="StageConfigureBoot" xml:space="preserve"><value>Creating UEFI boot files</value></data>
+<data name="StagePartitionDisk" xml:space="preserve"><value>Erasing the confirmed additional disk</value></data>
+<data name="StageAwaitingFirstBoot" xml:space="preserve"><value>Starting the new Windows installation</value></data>
+<data name="StageInstallDrivers" xml:space="preserve"><value>Installing compatible drivers</value></data>
+<data name="StageInstallApplications" xml:space="preserve"><value>Installing optional applications</value></data>
+<data name="StageApplyProfile" xml:space="preserve"><value>Applying the selected profile</value></data>
+<data name="StageActivateWindows" xml:space="preserve"><value>Checking Windows activation</value></data>
+<data name="StageCleanupStaging" xml:space="preserve"><value>Configuring recovery and cleaning deployment storage</value></data>
+<data name="StageCompleted" xml:space="preserve"><value>Completed</value></data>
+<data name="NoBios" xml:space="preserve"><value>EasyWin does not require BIOS, Boot Menu or USB. The computer boots into WinPE once through Windows Boot Manager. A running Windows installation is required.</value></data>
+  <data name="Prerequisites" xml:space="preserve"><value>Deployment prerequisites</value></data>
+  <data name="AdkFolder" xml:space="preserve"><value>Windows Preinstallation Environment folder</value></data>
+  <data name="BrowseFolder" xml:space="preserve"><value>Browse folder</value></data>
+  <data name="RefreshDependencies" xml:space="preserve"><value>Refresh checks</value></data>
+  <data name="AdkDownload" xml:space="preserve"><value>Microsoft downloads</value></data>
+  <data name="DependencyFound" xml:space="preserve"><value>Found</value></data>
+  <data name="DependencyMissing" xml:space="preserve"><value>Missing</value></data>
+  <data name="CopyError" xml:space="preserve"><value>Copy diagnostic details</value></data>
+</root>

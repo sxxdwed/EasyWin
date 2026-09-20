@@ -18,6 +18,7 @@ public sealed record DiskChoice(
     long StagingCapacityBytes,
     object NativeIdentity)
 {
+    public IReadOnlyList<EasyWin.Core.Models.PartitionInfo> Volumes { get; init; } = [];
     public string DisplayName => $"{Model}  ·  {FormatSize(SizeBytes)}  ·  {Serial}";
     public string ConfirmationText => $"ERASE {DeviceId}";
     public bool IsRecommendedTarget => StagingCapacityBytes >= 20L * 1024 * 1024 * 1024;
@@ -31,6 +32,11 @@ public sealed record DiskChoice(
 }
 
 public sealed record DriverModeChoice(string Id, string DisplayName);
+
+public sealed record StagingVolumeChoice(EasyWin.Core.Models.PartitionInfo Volume)
+{
+    public string DisplayName => $"{Volume.DriveLetter}: · {Volume.FileSystem} · {Volume.FreeBytes / 1073741824d:0.0} GiB free · {Volume.GptPartitionId}";
+}
 
 public sealed class DiskEraseChoice(DiskChoice disk) : ObservableObject
 {
@@ -68,10 +74,10 @@ public sealed class ApplicationChoice(
 
     public string Id { get; } = id;
     public string Name { get; } = name;
-    public string Description { get; } = description;
-    public string Category { get; } = category;
+    public string Description => EasyWin.Core.Localization.DeploymentStrings.Translate(description);
+    public string Category => EasyWin.Core.Localization.DeploymentStrings.Translate(category);
     public bool IsAvailable { get; } = isAvailable;
-    public string AvailabilityText { get; } = availabilityText;
+    public string AvailabilityText => EasyWin.Core.Localization.DeploymentStrings.Translate(availabilityText);
     public string Details => string.IsNullOrWhiteSpace(AvailabilityText)
         ? Description
         : string.IsNullOrWhiteSpace(Description) ? AvailabilityText : $"{Description} · {AvailabilityText}";
@@ -99,18 +105,19 @@ public enum UiCheckStatus
 
 public sealed class CheckDisplayItem : ObservableObject
 {
-    private string _message = "Ожидание проверки";
+    private string _message = EasyWin.Core.Localization.DeploymentStrings.Get("Ui96");
     private UiCheckStatus _status;
 
     public CheckDisplayItem(string id, string name, bool isCritical)
     {
         Id = id;
-        Name = name;
+        _name = name;
         IsCritical = isCritical;
     }
 
     public string Id { get; }
-    public string Name { get; }
+    public string Name => EasyWin.Core.Localization.DeploymentStrings.Translate(_name);
+    private readonly string _name;
     public bool IsCritical { get; }
 
     public string Message
@@ -164,12 +171,13 @@ public sealed class StageDisplayItem : ObservableObject
     public StageDisplayItem(string id, string name, string description)
     {
         Id = id;
-        Name = name;
+        _name = name;
         Description = description;
     }
 
     public string Id { get; }
-    public string Name { get; }
+    public string Name => EasyWin.Core.Localization.DeploymentStrings.Translate(_name);
+    private readonly string _name;
     public string Description { get; }
 
     public UiStageStatus Status
@@ -246,6 +254,8 @@ public sealed record UiPreparationRequest(
     IReadOnlyList<string> ApplicationIds,
     string DriverMode,
     bool DryRun,
-    DiskChoice? StagingDisk = null);
+    DiskChoice? StagingDisk = null,
+    EasyWin.Core.Models.PartitionInfo? StagingVolume = null,
+    string? AdkRoot = null);
 
 public sealed record UiWorkflowResult(bool Success, string Message, string? ManifestPath = null);

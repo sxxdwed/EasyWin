@@ -41,6 +41,13 @@ public sealed class DiskPartScriptBuilder
             4L * 1024 * MiB,
             "Staging partition size");
         var sizeMiB = checked((requestedBytes + MiB - 1) / MiB);
+        if (request.UnallocatedOffsetBytes.HasValue)
+        {
+            long offset = request.UnallocatedOffsetBytes.Value;
+            if (offset < MiB || offset % MiB != 0) throw new DeploymentSafetyException("staging.offset", "Invalid staging extent alignment.");
+            return JoinLines($"select disk {disk}", $"create partition primary size={sizeMiB} offset={offset / 1024}",
+                $"format fs=ntfs quick label=\"{label}\"", $"assign letter={staging}");
+        }
 
         if (source == staging)
         {

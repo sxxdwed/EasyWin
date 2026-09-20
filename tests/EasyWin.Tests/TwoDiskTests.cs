@@ -167,6 +167,70 @@ public sealed class TwoDiskTests
     }
     private static ManifestService Manifests() => new(new SystemTextJsonSerializer(), new Sha256HashService());
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task PostInstall_FullDryRun_PersistsAppResultsAndSecondLaunchDoesNothing(bool failApp, bool interrupt)
+    {
+        var (m, root, t, s) = await Manifest();
+        string config = TestData.FindConfigRoot();
+        var inventory = m.FileInventory.ToList();
+        foreach (string source in Directory.EnumerateFiles(config, "*.json", SearchOption.AllDirectories))
+        {
+            string relative = Path.Combine("Config", Path.GetRelativePath(config, source));
+            string destination = Path.Combine(root, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination);
+            inventory.Add(new() { RelativePath = relative, LengthBytes = new FileInfo(destination).Length,
+                Sha256 = await new Sha256HashService().ComputeSha256Async(destination) });
+        }
+        var json = new SystemTextJsonSerializer();
+        var catalogs = new EasyWin.Core.Catalogs.CatalogService(json);
+        var app = (await catalogs.LoadApplicationsAsync(Path.Combine(root, "Config", "apps", "catalog.json"))).Applications[0];
+        bool interrupted = false;
+        bool IsApp(CommandSpec command) => command.FileName.EndsWith(app.Installer.Replace('/', Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+        var runner = new RecordingProcessRunner(command =>
+        {
+            if (interrupt && !interrupted && command.FileName == "cscript.exe")
+            {
+                interrupted = true;
+                throw new OperationCanceledException("Simulated restart after the application checkpoint.");
+            }
+            return new(command, failApp && IsApp(command) ? 1 : 0, "", "simulated optional failure", TimeSpan.Zero, true);
+        });
+        var diskService = new Disks(t, s);
+        var diskPart = new DiskPartService(runner);
+        var manifests = Manifests();
+        string path = Path.Combine(TestData.NewDirectory(), "manifest.json");
+        m = m with { ProfileId = "standard", DriverSelectionMode = DriverSelectionMode.None,
+            ApplicationIds = [app.Id], FileInventory = inventory,
+            State = new() { CompletedStages = [DeploymentStage.AwaitingFirstBoot] } };
+        await manifests.SaveAsync(m, path);
+        var orchestrator = new PostInstallOrchestrator(json, manifests, diskService, diskPart, catalogs,
+            new(runner, new Sha256HashService()), new(runner, new Sha256HashService()), new(runner), new(runner),
+            new(diskService, diskPart, new(), new BcdService(runner), runner, new()));
+        if (interrupt)
+        {
+            await Assert.ThrowsAsync<OperationCanceledException>(() => orchestrator.RunAsync(path));
+            var interruptedManifest = await json.DeserializeFileAsync<DeploymentManifest>(path);
+            Assert.Contains(app.Id, interruptedManifest.State.CompletedApplicationIds);
+            Assert.DoesNotContain(DeploymentStage.Completed, interruptedManifest.State.CompletedStages);
+        }
+        await orchestrator.RunAsync(path);
+        var completed = await json.DeserializeFileAsync<DeploymentManifest>(path);
+        await manifests.ValidateAsync(completed, Path.GetDirectoryName(path)!, false);
+        Assert.Contains(DeploymentStage.Completed, completed.State.CompletedStages);
+        Assert.True(completed.State.FirstBootValidated);
+        Assert.Contains(app.Id, failApp ? completed.State.FailedApplicationIds : completed.State.CompletedApplicationIds);
+        if (failApp) Assert.Contains(completed.State.OptionalWarnings, warning => warning.StartsWith(app.Id + ":", StringComparison.Ordinal));
+        Assert.Empty(diskPart.PlannedScripts);
+        Assert.Single(runner.Commands, IsApp);
+        int commands = runner.Commands.Count;
+        await orchestrator.RunAsync(path);
+        Assert.Equal(commands, runner.Commands.Count);
+    }
+
     [Fact]
     public async Task TwoDisk_FullWinPeDryRun_UsesOnlyTargetAndCompletes()
     {
@@ -188,6 +252,31 @@ public sealed class TwoDiskTests
         Assert.True(File.Exists(Path.Combine(root, "DryRun", "unattend.xml")));
         var completed = await manifests.LoadAndValidateAsync(path);
         Assert.Contains(DeploymentStage.AwaitingFirstBoot, completed.State.CompletedStages);
+        Assert.True(completed.State.DestructiveWorkStarted);
+        int commands = runner.Commands.Count;
+        var replay = await Assert.ThrowsAsync<DeploymentSafetyException>(() => orchestrator.RunAsync(path));
+        Assert.Equal("winpe.replay.blocked", replay.Code);
+        Assert.Equal(commands, runner.Commands.Count);
+        Assert.Equal(2, diskPart.PlannedScripts.Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WinPe_InterruptedBeforeFirstDiskCommand_DoesNotReplayDestruction(bool hasNewMarker)
+    {
+        var (m, root, t, s) = await Manifest();
+        m = m with { State = new() { DestructiveWorkStarted = hasNewMarker, CurrentStage = DeploymentStage.PrepareDisk } };
+        var runner = new RecordingProcessRunner(); var diskPart = new DiskPartService(runner);
+        var manifests = Manifests(); string path = Path.Combine(root, "manifest.json");
+        await manifests.SaveAsync(m, path);
+        var orchestrator = new WinPeDeploymentOrchestrator(manifests, new Disks(t, s), diskPart, new(),
+            new WindowsImageService(runner), new BootFilesService(runner), new UnattendGenerator(), new(), runner);
+        var error = await Assert.ThrowsAsync<DeploymentSafetyException>(() => orchestrator.RunAsync(path));
+        Assert.Equal("winpe.replay.blocked", error.Code);
+        Assert.Equal("winpe.replay.blocked", (await Assert.ThrowsAsync<DeploymentSafetyException>(() => orchestrator.RunAsync(path))).Code);
+        Assert.Empty(diskPart.PlannedScripts);
+        Assert.Empty(runner.Commands);
     }
 
     [Theory]

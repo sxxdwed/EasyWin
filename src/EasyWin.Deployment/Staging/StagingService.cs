@@ -14,7 +14,8 @@ public sealed record StagingBuildRequest(
     string ConfigurationRoot,
     Guid? BootEntryId = null,
     string? BcdBackupPath = null,
-    string? PayloadRoot = null);
+    string? PayloadRoot = null,
+    string? ExportedDriversRoot = null);
 
 public interface IStagingService
 {
@@ -44,6 +45,8 @@ public sealed class StagingService(IHashService hashes, IManifestService manifes
         }
 
         var inventory = new List<ManifestFileEntry>();
+        if (request.ExportedDriversRoot is not null)
+            CopyDirectory(request.ExportedDriversRoot, Path.Combine(root, "ExportedDrivers"));
         foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
         {
             if (Path.GetFileName(file).Equals("manifest.json", StringComparison.OrdinalIgnoreCase))

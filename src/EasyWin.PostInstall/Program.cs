@@ -19,17 +19,29 @@ static async Task<int> MainAsync(string[] args)
     string log = Path.Combine(root, "postinstall.log");
     try
     {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+        using var setup = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\Setup");
+        if (args.Contains("--defer-until-setup-complete", StringComparer.OrdinalIgnoreCase) &&
+            (Convert.ToInt32(setup?.GetValue("SystemSetupInProgress", 0), System.Globalization.CultureInfo.InvariantCulture) != 0 ||
+             Convert.ToInt32(setup?.GetValue("OOBEInProgress", 0), System.Globalization.CultureInfo.InvariantCulture) != 0)) return 2;
+        using var executionLock = PostInstallBootstrap.AcquireLock(root);
         string manifestPath = Value(args, "--manifest") ?? Path.Combine(root, "manifest.json");
-        using var structuredLogger = new DeploymentFileLogger(Path.Combine(root, "Logs"));
-        var runner = new LoggingProcessRunner(new ProcessRunner(), structuredLogger);
         var json = new SystemTextJsonSerializer();
         var hashes = new Sha256HashService();
+        var manifestService = new ManifestService(json, hashes);
+        var candidate = await json.DeserializeFileAsync<EasyWin.Core.Models.DeploymentManifest>(manifestPath).ConfigureAwait(false);
+        await manifestService.ValidateAsync(candidate, Path.GetDirectoryName(manifestPath)!, false).ConfigureAwait(false);
+        string planLogs = PathValidator.ResolveUnderRoot(root, $"Logs/{candidate.PlanId:N}");
+        Directory.CreateDirectory(planLogs);
+        log = Path.Combine(planLogs, "postinstall.log");
+        using var structuredLogger = new DeploymentFileLogger(planLogs);
+        var runner = new LoggingProcessRunner(new ProcessRunner(), structuredLogger);
         var disks = new PhysicalDiskService(runner);
         var bcd = new BcdService(runner);
         var diskPart = new DiskPartService(runner);
         var orchestrator = new PostInstallOrchestrator(
             json,
-            new ManifestService(json, hashes),
+            manifestService,
             disks,
             diskPart,
             new CatalogService(json),
@@ -40,6 +52,14 @@ static async Task<int> MainAsync(string[] args)
             new CleanupService(disks, diskPart, new DiskPartScriptBuilder(), bcd, runner, new DiskIdentityValidator()));
         var progress = new Progress<EasyWin.Core.Models.DeploymentProgress>(value => File.AppendAllText(log, $"{DateTimeOffset.UtcNow:O} {value.Stage} {value.Percentage:0.#}% {value.Message}{Environment.NewLine}"));
         await orchestrator.RunAsync(manifestPath, progress).ConfigureAwait(false);
+        var removeTask = await runner.RunAsync(new CommandSpec("schtasks.exe", ["/Delete", "/TN", PostInstallBootstrap.TaskName, "/F"], requiresElevation: true)).ConfigureAwait(false);
+        if (!removeTask.Succeeded)
+            await File.AppendAllTextAsync(log, "Bootstrap task removal will be retried on the next launch.\r\n").ConfigureAwait(false);
+        else
+        {
+            File.Delete(Path.Combine(root, "RegisterPostInstall.cmd"));
+            File.Delete(Path.Combine(root, "PostInstallTask.xml"));
+        }
         await File.AppendAllTextAsync(log, $"{DateTimeOffset.UtcNow:O} Completed{Environment.NewLine}").ConfigureAwait(false);
         return 0;
     }

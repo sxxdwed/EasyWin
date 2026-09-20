@@ -48,7 +48,12 @@ public sealed record PhysicalDiskSnapshot(
     bool IsReadOnly,
     bool IsOffline,
     string PartitionStyle,
-    IReadOnlyList<PartitionInfo> Partitions);
+    IReadOnlyList<PartitionInfo> Partitions)
+{
+    public IReadOnlyList<DiskExtent> UnallocatedExtents { get; init; } = [];
+}
+
+public sealed record DiskExtent(long OffsetBytes, long SizeBytes);
 
 public sealed record MountedIso(string ImagePath, string RootPath, bool MountedByEasyWin);
 
@@ -58,7 +63,8 @@ public sealed record StagingPartitionRequest(
     char StagingDriveLetter,
     long RequestedSizeBytes,
     string Label = "EASYWIN_DEPLOY",
-    Guid? ExpectedExistingPartitionGuid = null);
+    Guid? ExpectedExistingPartitionGuid = null,
+    long? UnallocatedOffsetBytes = null);
 
 public sealed record DiskPreparationRequest(
     int DiskNumber,
@@ -105,7 +111,8 @@ public sealed record WinPeBuildRequest(
     string OutputDirectory,
     string WinPeExecutablePath,
     IReadOnlyList<string> OptionalComponents,
-    IReadOnlyList<string> DriverInfPaths);
+    IReadOnlyList<string> DriverInfPaths,
+    Guid? PlanId = null);
 
 public sealed record WinPeBuildResult(
     string MediaRoot,

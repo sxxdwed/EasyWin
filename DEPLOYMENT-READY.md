@@ -1,6 +1,6 @@
-# EasyWin 1.3.0-beta.1 — experimental readiness
+# EasyWin Beta 1 — 1.4.0-beta.1 — experimental readiness
 
-NOT production-validated. Release build and 67 automated tests pass, including separate-staging WinPE DryRun and stop-before-format failures. A complete real reboot/deployment/first-boot cycle remains unverified. Test in a disposable UEFI VM first; keep external backups and independent recovery media.
+NOT production-validated. This beta contains additional recovery hardening after 1.3.0-beta.1. Automated validation does not establish real deployment safety. A complete real reboot/deployment/first-boot cycle remains unverified. Test in a disposable UEFI VM first; keep external backups and independent recovery media. See [validation gates](docs/VALIDATION-GATES.md) for outstanding work.
 
 EasyWin is published without a Windows ISO, Windows ADK files, exported drivers, third-party application installers, machine manifests, logs, disk identifiers, or product keys.
 
